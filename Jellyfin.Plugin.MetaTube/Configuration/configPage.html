@@ -224,24 +224,24 @@
 
                         <div class="selectTranslationEngineOpenAi">
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="txtOpenAiApiKey">OpenAI api key:</label>
+                                <label class="inputLabel inputLabelUnfocused" for="txtOpenAiApiKey">API 密钥：</label>
                                 <input id="txtOpenAiApiKey" is="emby-input" name="txtOpenAiApiKey" type="text"/>
                                 <div class="fieldDescription"></div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="txtOpenAiApiUrl">OpenAI api url:</label>
+                                <label class="inputLabel inputLabelUnfocused" for="txtOpenAiApiUrl">API 地址：</label>
                                 <input id="txtOpenAiApiUrl" is="emby-input" name="txtOpenAiApiUrl" type="text"/>
-                                <div class="fieldDescription">Custom OpenAI-compatible api url. (optional)</div>
+                                <div class="fieldDescription">第三方模型服务的 API 地址。（可选）</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="txtOpenAiModel">OpenAI model:</label>
+                                <label class="inputLabel inputLabelUnfocused" for="txtOpenAiModel">模型：</label>
                                 <input id="txtOpenAiModel" is="emby-input" name="txtOpenAiModel" type="text"/>
-                                <div class="fieldDescription">Custom OpenAI-compatible api model. (optional)</div>
+                                <div class="fieldDescription">第三方模型服务的模型名称。（可选）</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtOpenAiPrompt">OpenAI custom prompt:</label>
+                                <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtOpenAiPrompt">自定义提示词：</label>
                                 <textarea class="emby-input" id="txtOpenAiPrompt" is="emby-input" name="txtOpenAiPrompt" rows="8"></textarea>
-                                <div class="fieldDescription">Custom system prompt for translation. Leave blank to use the server default.</div>
+                                <div class="fieldDescription">用于翻译的自定义系统提示词。留空时使用服务器默认提示词。</div>
                             </div>
                         </div>
                     </div>

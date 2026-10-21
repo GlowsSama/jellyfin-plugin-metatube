@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
-        <Configurations>Debug;Release;Debug.Emby;Release.Emby</Configurations>
+        <Configurations>Debug;Release;Debug.Emby;Release.Emby;Debug.Emby49;Release.Emby49</Configurations>
         <Platforms>AnyCPU</Platforms>
         <AssemblyName>MetaTube</AssemblyName>
         <Authors>MetaTube</Authors>
@@ -22,10 +22,15 @@
     <PropertyGroup>
         <TargetFramework Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='Release'">net9.0</TargetFramework>
         <TargetFramework Condition="'$(Configuration)'=='Debug.Emby' or '$(Configuration)'=='Release.Emby'">net6.0</TargetFramework>
+        <TargetFramework Condition="'$(Configuration)'=='Debug.Emby49' or '$(Configuration)'=='Release.Emby49'">net8.0</TargetFramework>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)'=='Debug.Emby' or '$(Configuration)'=='Release.Emby'">
         <DefineConstants>__EMBY__</DefineConstants>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)'=='Debug.Emby49' or '$(Configuration)'=='Release.Emby49'">
+        <DefineConstants>__EMBY__;__EMBY49__</DefineConstants>
     </PropertyGroup>
 
     <ItemGroup>
@@ -41,26 +46,32 @@
         <PackageReference Include="MediaBrowser.Server.Core" Version="4.8.11"/>
     </ItemGroup>
 
+    <ItemGroup Condition="'$(Configuration)'=='Debug.Emby49' or '$(Configuration)'=='Release.Emby49'">
+        <PackageReference Include="MediaBrowser.Server.Core" Version="4.9.1.80"/>
+    </ItemGroup>
+
     <ItemGroup Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='Release'">
         <None Remove="Configuration\configPage.html"/>
         <EmbeddedResource Include="Configuration\configPage.html"/>
     </ItemGroup>
 
-    <ItemGroup Condition="'$(Configuration)'=='Debug.Emby' or '$(Configuration)'=='Release.Emby'">
+    <ItemGroup Condition="'$(Configuration)'=='Debug.Emby' or '$(Configuration)'=='Release.Emby' or '$(Configuration)'=='Debug.Emby49' or '$(Configuration)'=='Release.Emby49'">
         <None Remove="thumb.png"/>
         <EmbeddedResource Include="thumb.png"/>
     </ItemGroup>
 
-    <Target Name="Zip" AfterTargets="PostBuildEvent" Condition="'$(Configuration)'=='Release' or '$(Configuration)'=='Release.Emby'">
+    <Target Name="Zip" AfterTargets="PostBuildEvent" Condition="'$(Configuration)'=='Release' or '$(Configuration)'=='Release.Emby' or '$(Configuration)'=='Release.Emby49'">
         <ItemGroup>
             <FilesToDelete Include="$(BaseOutputPath)Jellyfin.MetaTube*.zip" Condition="'$(Configuration)'=='Release'"/>
             <FilesToDelete Include="$(BaseOutputPath)Emby.MetaTube*.zip" Condition="'$(Configuration)'=='Release.Emby'"/>
+            <FilesToDelete Include="$(BaseOutputPath)Emby49.MetaTube*.zip" Condition="'$(Configuration)'=='Release.Emby49'"/>
             <TempZipDirectory Include="$(OutputPath)output"/>
         </ItemGroup>
         <Delete Files="@(FilesToDelete)"/>
         <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="@(TempZipDirectory)"/>
         <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)Jellyfin.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release'"/>
         <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)Emby.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release.Emby'"/>
+        <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)Emby49.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release.Emby49'"/>
         <RemoveDir Directories="@(TempZipDirectory)"/>
     </Target>
 

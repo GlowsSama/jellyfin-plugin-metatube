@@ -195,27 +195,27 @@ public class PluginConfiguration : BasePluginConfiguration
     public string DeepLApiUrl { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("OpenAI API 密钥")]
+    [DisplayName("API 密钥")]
     [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
 #endif
     public string OpenAiApiKey { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("OpenAI API 地址")]
-    [Description("自定义兼容 OpenAI 的 API 地址。（可选）")]
+    [DisplayName("API 地址")]
+    [Description("第三方模型服务的 API 地址。（可选）")]
     [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
 #endif
     public string OpenAiApiUrl { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("OpenAI 模型")]
-    [Description("自定义兼容 OpenAI 的 API 模型。（可选）")]
+    [DisplayName("模型")]
+    [Description("第三方模型服务的模型名称。（可选）")]
     [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
 #endif
     public string OpenAiModel { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("OpenAI 自定义提示词")]
+    [DisplayName("自定义提示词")]
     [Description("用于翻译的自定义系统提示词。留空时使用服务器默认提示词。")]
     [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
     [EditMultiline(8)]

@@ -8,6 +8,8 @@ Global
 		Release|Any CPU = Release|Any CPU
 		Debug.Emby|Any CPU = Debug.Emby|Any CPU
 		Release.Emby|Any CPU = Release.Emby|Any CPU
+		Debug.Emby49|Any CPU = Debug.Emby49|Any CPU
+		Release.Emby49|Any CPU = Release.Emby49|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Debug.Emby|Any CPU.Build.0 = Debug.Emby|Any CPU
 		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Release.Emby|Any CPU.ActiveCfg = Release.Emby|Any CPU
 		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Release.Emby|Any CPU.Build.0 = Release.Emby|Any CPU
+		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Debug.Emby49|Any CPU.ActiveCfg = Debug.Emby49|Any CPU
+		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Debug.Emby49|Any CPU.Build.0 = Debug.Emby49|Any CPU
+		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Release.Emby49|Any CPU.ActiveCfg = Release.Emby49|Any CPU
+		{DD1CDA77-5286-454A-BDCD-866FBE15E740}.Release.Emby49|Any CPU.Build.0 = Release.Emby49|Any CPU
 	EndGlobalSection
 EndGlobal

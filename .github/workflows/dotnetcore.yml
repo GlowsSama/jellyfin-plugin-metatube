@@ -19,6 +19,7 @@ jobs:
         with:
           dotnet-version: |
             6.0.x
+            8.0.x
             9.0.x
 
       - name: Setup Python
@@ -35,6 +36,7 @@ jobs:
         run: |
           dotnet build --configuration Release -p:Version=${{ steps.shell.outputs.version }}
           dotnet build --configuration Release.Emby -p:Version=${{ steps.shell.outputs.version }}
+          dotnet build --configuration Release.Emby49 -p:Version=${{ steps.shell.outputs.version }}
 
       - name: Generate Manifest
         run: |
@@ -61,10 +63,12 @@ jobs:
           body: |
             Auto released by GitHub Actions.
 
-            - Emby 4.8.11: `Emby.MetaTube@v${{ steps.shell.outputs.version }}.zip`
+            - Emby 4.8.x: `Emby.MetaTube@v${{ steps.shell.outputs.version }}.zip`
+            - Emby 4.9+: `Emby49.MetaTube@v${{ steps.shell.outputs.version }}.zip`
             - Jellyfin 10.11.x: `Jellyfin.MetaTube@v${{ steps.shell.outputs.version }}.zip`
           draft: false
           tag_name: v${{ steps.shell.outputs.version }}
           files: |
             Jellyfin.Plugin.MetaTube/bin/Jellyfin.MetaTube@v${{ steps.shell.outputs.version }}.zip
             Jellyfin.Plugin.MetaTube/bin/Emby.MetaTube@v${{ steps.shell.outputs.version }}.zip
+            Jellyfin.Plugin.MetaTube/bin/Emby49.MetaTube@v${{ steps.shell.outputs.version }}.zip

@@ -15,6 +15,12 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 
 public class UpdatePluginTask : IScheduledTask
 {
+#if __EMBY49__
+    private const string UpdateAssetPrefix = "Emby49.";
+#else
+    private const string UpdateAssetPrefix = "Emby.";
+#endif
+
     private readonly IApplicationHost _applicationHost;
     private readonly IApplicationPaths _applicationPaths;
     private readonly IHttpClient _httpClient;
@@ -80,7 +86,9 @@ public class UpdatePluginTask : IScheduledTask
                 _logger.Info("Found new plugin version: {0}", remoteVersion);
 
                 var url = apiResult?.Assets
-                    .Where(asset => asset.Name.StartsWith("Emby") && asset.Name.EndsWith(".zip")).ToArray()
+                    .Where(asset =>
+                        asset.Name.StartsWith(UpdateAssetPrefix, StringComparison.OrdinalIgnoreCase) &&
+                        asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).ToArray()
                     .FirstOrDefault()
                     ?.BrowserDownloadUrl;
                 if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
