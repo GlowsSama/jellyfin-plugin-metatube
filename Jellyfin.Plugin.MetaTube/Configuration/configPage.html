@@ -34,6 +34,12 @@
                         <div class="fieldDescription">Access token for the MetaTube Server, or blank if no token is set by the backend.</div>
                     </div>
 
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtFlareSolverrEndpoint">FlareSolverr endpoint:</label>
+                        <input id="txtFlareSolverrEndpoint" is="emby-input" name="txtFlareSolverrEndpoint" type="text"/>
+                        <div class="fieldDescription">FlareSolverr API endpoint, such as http://flaresolverr:8191/v1. Leave blank to disable.</div>
+                    </div>
+
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableCollections" is="emby-checkbox" name="chkEnableCollections" type="checkbox"/>
@@ -343,6 +349,7 @@
             ApiClient.getPluginConfiguration(MetaTubePluginConfig.pluginUniqueId).then(function (config) {
                 $('#txtServer', page).val(config.Server).change();
                 $('#txtToken', page).val(config.Token).change();
+                $('#txtFlareSolverrEndpoint', page).val(config.FlareSolverrEndpoint).change();
                 page.querySelector('#chkEnableCollections').checked = config.EnableCollections;
                 page.querySelector('#chkEnableDirectors').checked = config.EnableDirectors;
                 page.querySelector('#chkEnableRatings').checked = config.EnableRatings;
@@ -384,6 +391,7 @@
             ApiClient.getPluginConfiguration(MetaTubePluginConfig.pluginUniqueId).then(function (config) {
                 config.Server = $('#txtServer', form).val();
                 config.Token = $('#txtToken', form).val();
+                config.FlareSolverrEndpoint = $('#txtFlareSolverrEndpoint', form).val();
                 config.EnableCollections = $('#chkEnableCollections', form).prop('checked');
                 config.EnableDirectors = $('#chkEnableDirectors', form).prop('checked');
                 config.EnableRatings = $('#chkEnableRatings', form).prop('checked');

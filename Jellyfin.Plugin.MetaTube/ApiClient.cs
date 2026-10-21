@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using System.Web;
 using Jellyfin.Plugin.MetaTube.Metadata;
 #if __EMBY__
@@ -19,6 +20,7 @@ public static class ApiClient
     private const string ThumbImageApi = "/v1/images/thumb";
     private const string BackdropImageApi = "/v1/images/backdrop";
     private const string TranslateApi = "/v1/translate";
+    private const string FlareSolverrConfigApi = "/v1/config/flaresolverr";
 
     private static string ComposeUrl(string path, NameValueCollection nv)
     {
@@ -120,6 +122,8 @@ public static class ApiClient
     public static async Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
 #endif
     {
+        await ConfigureFlareSolverrAsync(cancellationToken).ConfigureAwait(false);
+
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Add("User-Agent", DefaultUserAgent);
         var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -208,23 +212,91 @@ public static class ApiClient
         return await GetDataAsync<TranslationInfo>(apiUrl, false, cancellationToken);
     }
 
+    private static async Task ConfigureFlareSolverrAsync(CancellationToken cancellationToken)
+    {
+        var server = Plugin.Instance.Configuration.Server;
+        var token = Plugin.Instance.Configuration.Token;
+        var endpoint = Plugin.Instance.Configuration.FlareSolverrEndpoint?.Trim() ?? string.Empty;
+
+        if (IsFlareSolverrSyncCurrent(server, token, endpoint))
+            return;
+
+        await FlareSolverrSyncLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            server = Plugin.Instance.Configuration.Server;
+            token = Plugin.Instance.Configuration.Token;
+            endpoint = Plugin.Instance.Configuration.FlareSolverrEndpoint?.Trim() ?? string.Empty;
+
+            if (IsFlareSolverrSyncCurrent(server, token, endpoint))
+                return;
+
+            var request = new HttpRequestMessage(HttpMethod.Put, ComposeUrl(FlareSolverrConfigApi,
+                new NameValueCollection()));
+            request.Content = JsonContent.Create(new FlareSolverrConfigRequest
+            {
+                Endpoint = endpoint
+            });
+
+            AddGeneralHeaders(request);
+
+            if (!string.IsNullOrWhiteSpace(token))
+                request.Headers.Authorization =
+                    new AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            _ = await ReadDataAsync<FlareSolverrConfigResult>(response, cancellationToken)
+                .ConfigureAwait(false);
+
+            lock (FlareSolverrSyncStateLock)
+            {
+                _lastFlareSolverrServer = server;
+                _lastFlareSolverrToken = token;
+                _lastFlareSolverrEndpoint = endpoint;
+                _lastFlareSolverrSync = DateTimeOffset.UtcNow;
+            }
+        }
+        finally
+        {
+            FlareSolverrSyncLock.Release();
+        }
+    }
+
+    private static bool IsFlareSolverrSyncCurrent(string server, string token, string endpoint)
+    {
+        lock (FlareSolverrSyncStateLock)
+        {
+            return _lastFlareSolverrServer == server &&
+                   _lastFlareSolverrToken == token &&
+                   _lastFlareSolverrEndpoint == endpoint &&
+                   DateTimeOffset.UtcNow - _lastFlareSolverrSync < FlareSolverrSyncInterval;
+        }
+    }
+
     private static async Task<T> GetDataAsync<T>(string url, bool requireAuth,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (requireAuth)
+            await ConfigureFlareSolverrAsync(cancellationToken).ConfigureAwait(false);
+
         var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-        // Add General Headers.
-        request.Headers.Add("Accept", "application/json");
-        request.Headers.Add("User-Agent", DefaultUserAgent);
+        AddGeneralHeaders(request);
 
         // Set API Authorization Token.
         if (requireAuth && !string.IsNullOrWhiteSpace(Plugin.Instance.Configuration.Token))
             request.Headers.Authorization =
                 new AuthenticationHeaderValue("Bearer", Plugin.Instance.Configuration.Token);
 
-        var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await ReadDataAsync<T>(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<T> ReadDataAsync<T>(HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
 
         // Nullable forgiving reason:
         // Response is unlikely to be null.
@@ -244,9 +316,22 @@ public static class ApiClient
         return apiResponse.Data;
     }
 
+    private static void AddGeneralHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("Accept", "application/json");
+        request.Headers.Add("User-Agent", DefaultUserAgent);
+    }
+
     #region Http
 
     private static readonly HttpClient HttpClient;
+    private static readonly SemaphoreSlim FlareSolverrSyncLock = new(1, 1);
+    private static readonly object FlareSolverrSyncStateLock = new();
+    private static readonly TimeSpan FlareSolverrSyncInterval = TimeSpan.FromSeconds(30);
+    private static string _lastFlareSolverrServer;
+    private static string _lastFlareSolverrToken;
+    private static string _lastFlareSolverrEndpoint;
+    private static DateTimeOffset _lastFlareSolverrSync = DateTimeOffset.MinValue;
     private static string DefaultUserAgent => $"{Plugin.ProviderName}/{Plugin.Instance.Version}";
 
     static ApiClient()
@@ -268,4 +353,19 @@ public static class ApiClient
     }
 
     #endregion
+
+    private sealed class FlareSolverrConfigRequest
+    {
+        [JsonPropertyName("endpoint")]
+        public string Endpoint { get; set; }
+    }
+
+    private sealed class FlareSolverrConfigResult
+    {
+        [JsonPropertyName("endpoint")]
+        public string Endpoint { get; set; }
+
+        [JsonPropertyName("providers")]
+        public string[] Providers { get; set; }
+    }
 }

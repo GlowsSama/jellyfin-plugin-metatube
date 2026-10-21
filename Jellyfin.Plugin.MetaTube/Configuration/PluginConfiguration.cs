@@ -34,6 +34,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public string Token { get; set; } = string.Empty;
 
 #if __EMBY__
+    [DisplayName("FlareSolverr endpoint")]
+    [Description("FlareSolverr API endpoint, such as http://flaresolverr:8191/v1. Leave blank to disable.")]
+#endif
+    public string FlareSolverrEndpoint { get; set; } = string.Empty;
+
+#if __EMBY__
     [DisplayName("Enable auto update")]
     [Description("Automatically update the plugin through scheduled tasks.")]
     public bool EnableAutoUpdate { get; set; } = true;
