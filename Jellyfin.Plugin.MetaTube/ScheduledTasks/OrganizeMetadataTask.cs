@@ -37,9 +37,19 @@ public class OrganizeMetadataTask : IScheduledTask
 
     public string Key => $"{Plugin.ProviderName}OrganizeMetadata";
 
-    public string Name => "Organize Metadata";
+    public string Name =>
+#if __EMBY__
+        "整理元数据";
+#else
+        "Organize Metadata";
+#endif
 
-    public string Description => $"Organizes video metadata provided by {Plugin.ProviderName} in library.";
+    public string Description =>
+#if __EMBY__
+        $"整理媒体库中由 {Plugin.ProviderName} 提供信息的视频元数据。";
+#else
+        $"Organizes video metadata provided by {Plugin.ProviderName} in library.";
+#endif
 
     public string Category => Plugin.ProviderName;
 

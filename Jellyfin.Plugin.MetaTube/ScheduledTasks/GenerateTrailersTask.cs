@@ -47,9 +47,19 @@ public class GenerateTrailersTask : IScheduledTask
 
     public string Key => $"{Plugin.ProviderName}GenerateTrailers";
 
-    public string Name => "Generate Trailers";
+    public string Name =>
+#if __EMBY__
+        "生成预告片";
+#else
+        "Generate Trailers";
+#endif
 
-    public string Description => $"Generates video trailers provided by {Plugin.ProviderName} in library.";
+    public string Description =>
+#if __EMBY__
+        $"为媒体库中由 {Plugin.ProviderName} 提供信息的视频生成预告片。";
+#else
+        $"Generates video trailers provided by {Plugin.ProviderName} in library.";
+#endif
 
     public string Category => Plugin.ProviderName;
 

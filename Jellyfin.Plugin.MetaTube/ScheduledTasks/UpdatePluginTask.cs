@@ -35,9 +35,9 @@ public class UpdatePluginTask : IScheduledTask
 
     public string Key => $"{Plugin.ProviderName}UpdatePlugin";
 
-    public string Name => "Update Plugin";
+    public string Name => "更新插件";
 
-    public string Description => $"Updates {Plugin.ProviderName} plugin to latest version.";
+    public string Description => $"将 {Plugin.ProviderName} 插件更新至最新版本。";
 
     public string Category => Plugin.ProviderName;
 

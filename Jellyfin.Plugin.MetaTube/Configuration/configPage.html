@@ -238,6 +238,11 @@
                                 <input id="txtOpenAiModel" is="emby-input" name="txtOpenAiModel" type="text"/>
                                 <div class="fieldDescription">Custom OpenAI-compatible api model. (optional)</div>
                             </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtOpenAiPrompt">OpenAI custom prompt:</label>
+                                <textarea class="emby-input" id="txtOpenAiPrompt" is="emby-input" name="txtOpenAiPrompt" rows="8"></textarea>
+                                <div class="fieldDescription">Custom system prompt for translation. Leave blank to use the server default.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -375,6 +380,7 @@
                 $('#txtOpenAiApiKey', page).val(config.OpenAiApiKey).change();
                 $('#txtOpenAiApiUrl', page).val(config.OpenAiApiUrl).change();
                 $('#txtOpenAiModel', page).val(config.OpenAiModel).change();
+                $('#txtOpenAiPrompt', page).val(config.OpenAiPrompt).change();
                 page.querySelector('#chkEnableTitleSubstitution').checked = config.EnableTitleSubstitution;
                 $('#txtTitleRawSubstitutionTable', page).val(config.TitleRawSubstitutionTable).change();
                 page.querySelector('#chkEnableActorSubstitution').checked = config.EnableActorSubstitution;
@@ -417,6 +423,7 @@
                 config.OpenAiApiKey = $('#txtOpenAiApiKey', form).val();
                 config.OpenAiApiUrl = $('#txtOpenAiApiUrl', form).val();
                 config.OpenAiModel = $('#txtOpenAiModel', form).val();
+                config.OpenAiPrompt = $('#txtOpenAiPrompt', form).val();
                 config.EnableTitleSubstitution = $('#chkEnableTitleSubstitution', form).prop('checked');
                 config.TitleRawSubstitutionTable = $('#txtTitleRawSubstitutionTable', form).val();
                 config.EnableActorSubstitution = $('#chkEnableActorSubstitution', form).prop('checked');
