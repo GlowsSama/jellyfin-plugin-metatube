@@ -16,9 +16,9 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 public class UpdatePluginTask : IScheduledTask
 {
 #if __EMBY49__
-    private const string UpdateAssetPrefix = "Emby49.";
+    private const string UpdateAssetPrefix = "EMBY4.9.";
 #else
-    private const string UpdateAssetPrefix = "Emby.";
+    private const string UpdateAssetPrefix = "EMBY4.8.";
 #endif
 
     private readonly IApplicationHost _applicationHost;

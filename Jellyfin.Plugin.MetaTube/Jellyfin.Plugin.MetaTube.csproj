@@ -63,15 +63,15 @@
     <Target Name="Zip" AfterTargets="PostBuildEvent" Condition="'$(Configuration)'=='Release' or '$(Configuration)'=='Release.Emby' or '$(Configuration)'=='Release.Emby49'">
         <ItemGroup>
             <FilesToDelete Include="$(BaseOutputPath)Jellyfin.MetaTube*.zip" Condition="'$(Configuration)'=='Release'"/>
-            <FilesToDelete Include="$(BaseOutputPath)Emby.MetaTube*.zip" Condition="'$(Configuration)'=='Release.Emby'"/>
-            <FilesToDelete Include="$(BaseOutputPath)Emby49.MetaTube*.zip" Condition="'$(Configuration)'=='Release.Emby49'"/>
+            <FilesToDelete Include="$(BaseOutputPath)EMBY4.8.MetaTube*.zip" Condition="'$(Configuration)'=='Release.Emby'"/>
+            <FilesToDelete Include="$(BaseOutputPath)EMBY4.9.MetaTube*.zip" Condition="'$(Configuration)'=='Release.Emby49'"/>
             <TempZipDirectory Include="$(OutputPath)output"/>
         </ItemGroup>
         <Delete Files="@(FilesToDelete)"/>
         <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="@(TempZipDirectory)"/>
         <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)Jellyfin.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release'"/>
-        <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)Emby.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release.Emby'"/>
-        <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)Emby49.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release.Emby49'"/>
+        <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)EMBY4.8.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release.Emby'"/>
+        <ZipDirectory SourceDirectory="@(TempZipDirectory)" DestinationFile="$(BaseOutputPath)EMBY4.9.MetaTube@v$(Version).zip" Condition="'$(Configuration)'=='Release.Emby49'"/>
         <RemoveDir Directories="@(TempZipDirectory)"/>
     </Target>
 

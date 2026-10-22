@@ -63,12 +63,12 @@ jobs:
           body: |
             Auto released by GitHub Actions.
 
-            - Emby 4.8.x: `Emby.MetaTube@v${{ steps.shell.outputs.version }}.zip`
-            - Emby 4.9+: `Emby49.MetaTube@v${{ steps.shell.outputs.version }}.zip`
+            - Emby 4.8.x: `EMBY4.8.MetaTube@v${{ steps.shell.outputs.version }}.zip`
+            - Emby 4.9+: `EMBY4.9.MetaTube@v${{ steps.shell.outputs.version }}.zip`
             - Jellyfin 10.11.x: `Jellyfin.MetaTube@v${{ steps.shell.outputs.version }}.zip`
           draft: false
           tag_name: v${{ steps.shell.outputs.version }}
           files: |
             Jellyfin.Plugin.MetaTube/bin/Jellyfin.MetaTube@v${{ steps.shell.outputs.version }}.zip
-            Jellyfin.Plugin.MetaTube/bin/Emby.MetaTube@v${{ steps.shell.outputs.version }}.zip
-            Jellyfin.Plugin.MetaTube/bin/Emby49.MetaTube@v${{ steps.shell.outputs.version }}.zip
+            Jellyfin.Plugin.MetaTube/bin/EMBY4.8.MetaTube@v${{ steps.shell.outputs.version }}.zip
+            Jellyfin.Plugin.MetaTube/bin/EMBY4.9.MetaTube@v${{ steps.shell.outputs.version }}.zip
