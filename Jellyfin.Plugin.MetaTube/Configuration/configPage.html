@@ -131,6 +131,18 @@
                         <input id="txtRawMovieProviderFilter" is="emby-input" name="txtRawMovieProviderFilter" type="text"/>
                         <div class="fieldDescription">Provider names are case-insensitive, with decreasing precedence from left to right, separated by commas.</div>
                     </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JavDB 备用域名：</label>
+                        <input id="txtJavDbBackupDomains" is="emby-input" name="txtJavDbBackupDomains" type="text"/>
+                        <div class="fieldDescription">主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtMissAvBackupDomains">MissAV 备用域名：</label>
+                        <input id="txtMissAvBackupDomains" is="emby-input" name="txtMissAvBackupDomains" type="text"/>
+                        <div class="fieldDescription">主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。</div>
+                    </div>
                 </div>
 
                 <div class="verticalSection">
@@ -366,6 +378,8 @@
                 $('#txtDefaultImageQuality', page).val(config.DefaultImageQuality).change();
                 page.querySelector('#chkEnableMovieProviderFilter').checked = config.EnableMovieProviderFilter;
                 $('#txtRawMovieProviderFilter', page).val(config.RawMovieProviderFilter).change();
+                $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
+                $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
                 $('#txtNameTemplate', page).val(config.NameTemplate).change();
                 $('#txtTaglineTemplate', page).val(config.TaglineTemplate).change();
@@ -409,6 +423,8 @@
                 config.DefaultImageQuality = $('#txtDefaultImageQuality', form).val();
                 config.EnableMovieProviderFilter = $('#chkEnableMovieProviderFilter', form).prop('checked');
                 config.RawMovieProviderFilter = $('#txtRawMovieProviderFilter', form).val();
+                config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
+                config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');
                 config.NameTemplate = $('#txtNameTemplate', form).val();
                 config.TaglineTemplate = $('#txtTaglineTemplate', form).val();

@@ -128,6 +128,18 @@ public class PluginConfiguration : BasePluginConfiguration
     private List<string> _movieProviderFilter;
 
 #if __EMBY__
+    [DisplayName("JavDB 备用域名")]
+    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。")]
+#endif
+    public string JavDbBackupDomains { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("MissAV 备用域名")]
+    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。")]
+#endif
+    public string MissAvBackupDomains { get; set; } = string.Empty;
+
+#if __EMBY__
     [DisplayName("启用模板")]
 #endif
     public bool EnableTemplate { get; set; } = false;

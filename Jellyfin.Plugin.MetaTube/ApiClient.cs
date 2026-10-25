@@ -21,6 +21,7 @@ public static class ApiClient
     private const string BackdropImageApi = "/v1/images/backdrop";
     private const string TranslateApi = "/v1/translate";
     private const string FlareSolverrConfigApi = "/v1/config/flaresolverr";
+    private const string DomainsConfigApi = "/v1/config/domains";
 
     private static string ComposeUrl(string path, NameValueCollection nv)
     {
@@ -122,7 +123,7 @@ public static class ApiClient
     public static async Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
 #endif
     {
-        await ConfigureFlareSolverrAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureServerAsync(cancellationToken).ConfigureAwait(false);
 
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Add("User-Agent", DefaultUserAgent);
@@ -262,6 +263,116 @@ public static class ApiClient
         }
     }
 
+    private static async Task ConfigureDomainsAsync(CancellationToken cancellationToken)
+    {
+        var server = Plugin.Instance.Configuration.Server;
+        var token = Plugin.Instance.Configuration.Token;
+        var (signature, providers) = GetDomainsConfiguration();
+
+        if (IsDomainsSyncCurrent(server, token, signature))
+            return;
+
+        await DomainsSyncLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            server = Plugin.Instance.Configuration.Server;
+            token = Plugin.Instance.Configuration.Token;
+            (signature, providers) = GetDomainsConfiguration();
+
+            if (IsDomainsSyncCurrent(server, token, signature))
+                return;
+
+            // Avoid an unnecessary migration request when no custom domains are used.
+            if (!IsDomainsSyncInitialized &&
+                providers.Values.All(domains => domains.Length == 0))
+            {
+                MarkDomainsSyncComplete(server, token, signature);
+                return;
+            }
+
+            var request = new HttpRequestMessage(HttpMethod.Put, ComposeUrl(DomainsConfigApi,
+                new NameValueCollection()));
+            request.Content = JsonContent.Create(new DomainsConfigRequest
+            {
+                Providers = providers
+            });
+
+            AddGeneralHeaders(request);
+
+            if (!string.IsNullOrWhiteSpace(token))
+                request.Headers.Authorization =
+                    new AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            _ = await ReadDataAsync<DomainsConfigResult>(response, cancellationToken).ConfigureAwait(false);
+
+            MarkDomainsSyncComplete(server, token, signature);
+        }
+        finally
+        {
+            DomainsSyncLock.Release();
+        }
+    }
+
+    private static async Task ConfigureServerAsync(CancellationToken cancellationToken)
+    {
+        await ConfigureFlareSolverrAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureDomainsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static (string Signature, Dictionary<string, string[]> Providers) GetDomainsConfiguration()
+    {
+        var providers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["JavDB"] = SplitBackupDomains(Plugin.Instance.Configuration.JavDbBackupDomains),
+            ["MissAV"] = SplitBackupDomains(Plugin.Instance.Configuration.MissAvBackupDomains)
+        };
+        var signature = string.Join(";", providers.Select(provider =>
+            $"{provider.Key}={string.Join(",", provider.Value)}"));
+        return (signature, providers);
+    }
+
+    private static string[] SplitBackupDomains(string value)
+    {
+        return (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsDomainsSyncCurrent(string server, string token, string signature)
+    {
+        lock (DomainsSyncStateLock)
+        {
+            return _domainsSyncInitialized &&
+                   _lastDomainsServer == server &&
+                   _lastDomainsToken == token &&
+                   _lastDomainsSignature == signature &&
+                   DateTimeOffset.UtcNow - _lastDomainsSync < DomainsSyncInterval;
+        }
+    }
+
+    private static void MarkDomainsSyncComplete(string server, string token, string signature)
+    {
+        lock (DomainsSyncStateLock)
+        {
+            _domainsSyncInitialized = true;
+            _lastDomainsServer = server;
+            _lastDomainsToken = token;
+            _lastDomainsSignature = signature;
+            _lastDomainsSync = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private static bool IsDomainsSyncInitialized
+    {
+        get
+        {
+            lock (DomainsSyncStateLock)
+                return _domainsSyncInitialized;
+        }
+    }
+
     private static bool IsFlareSolverrSyncCurrent(string server, string token, string endpoint)
     {
         lock (FlareSolverrSyncStateLock)
@@ -279,7 +390,7 @@ public static class ApiClient
         cancellationToken.ThrowIfCancellationRequested();
 
         if (requireAuth)
-            await ConfigureFlareSolverrAsync(cancellationToken).ConfigureAwait(false);
+            await ConfigureServerAsync(cancellationToken).ConfigureAwait(false);
 
         var request = new HttpRequestMessage(HttpMethod.Get, url);
 
@@ -326,12 +437,20 @@ public static class ApiClient
 
     private static readonly HttpClient HttpClient;
     private static readonly SemaphoreSlim FlareSolverrSyncLock = new(1, 1);
+    private static readonly SemaphoreSlim DomainsSyncLock = new(1, 1);
     private static readonly object FlareSolverrSyncStateLock = new();
+    private static readonly object DomainsSyncStateLock = new();
     private static readonly TimeSpan FlareSolverrSyncInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DomainsSyncInterval = TimeSpan.FromSeconds(30);
     private static string _lastFlareSolverrServer;
     private static string _lastFlareSolverrToken;
     private static string _lastFlareSolverrEndpoint;
     private static DateTimeOffset _lastFlareSolverrSync = DateTimeOffset.MinValue;
+    private static bool _domainsSyncInitialized;
+    private static string _lastDomainsServer;
+    private static string _lastDomainsToken;
+    private static string _lastDomainsSignature;
+    private static DateTimeOffset _lastDomainsSync = DateTimeOffset.MinValue;
     private static string DefaultUserAgent => $"{Plugin.ProviderName}/{Plugin.Instance.Version}";
 
     static ApiClient()
@@ -367,5 +486,17 @@ public static class ApiClient
 
         [JsonPropertyName("providers")]
         public string[] Providers { get; set; }
+    }
+
+    private sealed class DomainsConfigRequest
+    {
+        [JsonPropertyName("providers")]
+        public Dictionary<string, string[]> Providers { get; set; }
+    }
+
+    private sealed class DomainsConfigResult
+    {
+        [JsonPropertyName("providers")]
+        public Dictionary<string, string[]> Providers { get; set; }
     }
 }
