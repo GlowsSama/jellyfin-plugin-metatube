@@ -3,6 +3,7 @@ using Jellyfin.Plugin.MetaTube.Translation;
 #if __EMBY__
 using System.ComponentModel;
 using Emby.Web.GenericEdit;
+using Emby.Web.GenericEdit.Common;
 using MediaBrowser.Model.Attributes;
 
 #else
@@ -111,6 +112,8 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("影片来源过滤")]
     [Description("勾选需要启用的影片来源；未选择时保留全部来源。")]
+    [EditMultilSelect]
+    [SelectItemsSource(nameof(MovieProviderOptions))]
 #endif
     public string RawMovieProviderFilter
     {
@@ -118,6 +121,88 @@ public class PluginConfiguration : BasePluginConfiguration
         set => _movieProviderFilter = value?.Split(',').Select(s => s.Trim()).Where(s => s.Any())
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+#if __EMBY__
+    [Browsable(false)]
+    public List<EditorSelectOption> MovieProviderOptions
+    {
+        get
+        {
+            var providers = new List<string>();
+            AddMovieProviders(providers, _movieProviderFilter);
+            AddMovieProviders(providers, KnownMovieProviders);
+
+            return providers.Select(provider => new EditorSelectOption
+            {
+                Name = provider,
+                Value = provider,
+                IsEnabled = true
+            }).ToList();
+        }
+    }
+
+    private static readonly string[] KnownMovieProviders =
+    {
+        "AVBASE",
+        "FANZA",
+        "DUGA",
+        "MGS",
+        "Getchu",
+        "SOD",
+        "FALENO",
+        "DAHLIA",
+        "AV-LEAGUE",
+        "Pcolle",
+        "AVE",
+        "Caribbeancom",
+        "CaribbeancomPR",
+        "10musume",
+        "1Pondo",
+        "HEYZO",
+        "TOKYO-HOT",
+        "H0930",
+        "C0930",
+        "H4610",
+        "KIN8",
+        "PACOPACOMAMA",
+        "MURAMURA",
+        "MYWIFE",
+        "HeyDouga",
+        "Gcolle",
+        "FC2",
+        "FC2PPVDB",
+        "fc2hub",
+        "Fantia",
+        "FantiaPost",
+        "MadouQu",
+        "7MMTV",
+        "MissAV",
+        "JavVerse",
+        "JavLibrary",
+        "JavBus",
+        "JAVFREE",
+        "123AV",
+        "AVMOO",
+        "AVSOX",
+        "Manko",
+        "ThePornDBScene",
+        "ThePornDBMovie",
+        "JavDB"
+    };
+
+    private static void AddMovieProviders(ICollection<string> target, IEnumerable<string> providers)
+    {
+        foreach (var provider in providers ?? Enumerable.Empty<string>())
+        {
+            var normalized = provider?.Trim();
+            if (!string.IsNullOrEmpty(normalized) &&
+                !target.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                target.Add(normalized);
+            }
+        }
+    }
+#endif
 
     public List<string> GetMovieProviderFilter()
     {
