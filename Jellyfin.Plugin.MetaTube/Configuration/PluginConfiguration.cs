@@ -1,3 +1,4 @@
+using System.Text;
 using Jellyfin.Plugin.MetaTube.Helpers;
 using Jellyfin.Plugin.MetaTube.Translation;
 #if __EMBY__
@@ -123,6 +124,19 @@ public class PluginConfiguration : BasePluginConfiguration
     }
 
 #if __EMBY__
+    [DisplayName("启用媒体库自定义刮削源")]
+    [Description("启用后，匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。")]
+#endif
+    public bool EnableLibraryProviderFilter { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("媒体库自定义刮削源")]
+    [Description("每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,JAVDB")]
+    [EditMultiline(8)]
+#endif
+    public string LibraryProviderFilterRules { get; set; } = string.Empty;
+
+#if __EMBY__
     [Browsable(false)]
     public List<EditorSelectOption> MovieProviderOptions
     {
@@ -207,6 +221,64 @@ public class PluginConfiguration : BasePluginConfiguration
     public List<string> GetMovieProviderFilter()
     {
         return _movieProviderFilter;
+    }
+
+    public IReadOnlyList<LibraryProviderFilterRule> GetLibraryProviderFilters()
+    {
+        var rules = new List<LibraryProviderFilterRule>();
+        var libraryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var rawLine in (LibraryProviderFilterRules ?? string.Empty).Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (!line.Any() || line.StartsWith('#'))
+                continue;
+
+            var separatorIndex = line.IndexOfAny(new[] { ':', '：' });
+            if (separatorIndex <= 0 || separatorIndex == line.Length - 1)
+                continue;
+
+            var libraryName = line[..separatorIndex].Trim();
+            var normalizedLibraryName = NormalizeLibraryName(libraryName);
+            if (!normalizedLibraryName.Any() || !libraryNames.Add(normalizedLibraryName))
+                continue;
+
+            var providers = line[(separatorIndex + 1)..]
+                .Split(new[] { ',', '，', ';', '；' },
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(provider => provider.Any())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (!providers.Any())
+                continue;
+
+            rules.Add(new LibraryProviderFilterRule(libraryName, providers));
+        }
+
+        return rules;
+    }
+
+    public static string NormalizeLibraryName(string value)
+    {
+        var normalized = (value ?? string.Empty).Normalize(NormalizationForm.FormKC);
+        var builder = new StringBuilder(normalized.Length);
+        var previousWasWhitespace = false;
+
+        foreach (var character in normalized)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace)
+                    builder.Append(' ');
+                previousWasWhitespace = true;
+                continue;
+            }
+
+            builder.Append(character);
+            previousWasWhitespace = false;
+        }
+
+        return builder.ToString().Trim();
     }
 
     private List<string> _movieProviderFilter;
@@ -389,4 +461,17 @@ public class PluginConfiguration : BasePluginConfiguration
     }
 
     private SubstitutionTable _genreSubstitutionTable;
+}
+
+public sealed class LibraryProviderFilterRule
+{
+    public LibraryProviderFilterRule(string libraryName, IReadOnlyList<string> providers)
+    {
+        LibraryName = libraryName;
+        Providers = providers;
+    }
+
+    public string LibraryName { get; }
+
+    public IReadOnlyList<string> Providers { get; }
 }

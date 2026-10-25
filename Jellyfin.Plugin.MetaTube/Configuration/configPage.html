@@ -210,6 +210,20 @@
                     </details>
                     <div class="fieldDescription">Select the providers that may supply movie search results. Leaving all providers unchecked keeps every provider.</div>
 
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkEnableLibraryProviderFilter" is="emby-checkbox" name="chkEnableLibraryProviderFilter" type="checkbox"/>
+                            <span>启用媒体库自定义刮削源</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtLibraryProviderFilterRules">媒体库自定义刮削源：</label>
+                        <textarea class="emby-input" id="txtLibraryProviderFilterRules" is="emby-input" name="txtLibraryProviderFilterRules" rows="8"></textarea>
+                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,JAVDB。媒体库名称支持空格、中文和 | 等符号。</div>
+                    </div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JavDB 备用域名：</label>
                         <input id="txtJavDbBackupDomains" is="emby-input" name="txtJavDbBackupDomains" type="text"/>
@@ -602,6 +616,8 @@
                 $('#txtDefaultImageQuality', page).val(config.DefaultImageQuality).change();
                 page.querySelector('#chkEnableMovieProviderFilter').checked = config.EnableMovieProviderFilter;
                 renderMovieProviderFilter(config.RawMovieProviderFilter);
+                page.querySelector('#chkEnableLibraryProviderFilter').checked = config.EnableLibraryProviderFilter;
+                $('#txtLibraryProviderFilterRules', page).val(config.LibraryProviderFilterRules).change();
                 $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
                 $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
@@ -647,6 +663,8 @@
                 config.DefaultImageQuality = $('#txtDefaultImageQuality', form).val();
                 config.EnableMovieProviderFilter = $('#chkEnableMovieProviderFilter', form).prop('checked');
                 config.RawMovieProviderFilter = getSelectedMovieProviders().join(",");
+                config.EnableLibraryProviderFilter = $('#chkEnableLibraryProviderFilter', form).prop('checked');
+                config.LibraryProviderFilterRules = $('#txtLibraryProviderFilterRules', form).val();
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
                 config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');

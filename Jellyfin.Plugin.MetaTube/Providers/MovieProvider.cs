@@ -7,6 +7,7 @@ using Jellyfin.Plugin.MetaTube.Metadata;
 using Jellyfin.Plugin.MetaTube.Translation;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Providers;
 using MovieInfo = MediaBrowser.Controller.Providers.MovieInfo;
@@ -33,16 +34,19 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     private const string Rating = "JP-18+";
 
     private static readonly string[] AvBaseSupportedProviderNames = { "DUGA", "FANZA", "Getchu", "MGS" };
+    private readonly ILibraryManager _libraryManager;
 
 #if __EMBY__
     public MetadataFeatures[] Features => new[]
         { MetadataFeatures.Collections, MetadataFeatures.Adult, MetadataFeatures.RequiredSetup };
 
-    public MovieProvider(ILogManager logManager) : base(logManager.CreateLogger<MovieProvider>())
+    public MovieProvider(ILogManager logManager, ILibraryManager libraryManager)
+        : base(logManager.CreateLogger<MovieProvider>())
 #else
-    public MovieProvider(ILogger<MovieProvider> logger) : base(logger)
+    public MovieProvider(ILogger<MovieProvider> logger, ILibraryManager libraryManager) : base(logger)
 #endif
     {
+        _libraryManager = libraryManager;
     }
 
     public async Task<MetadataResult<Movie>> GetMetadata(MovieInfo info,
@@ -217,21 +221,19 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 pid.Update != true, cancellationToken));
         }
 
-        if (Configuration.EnableMovieProviderFilter)
+        var providerFilter = GetMovieProviderFilter(info);
+        if (providerFilter.Any())
         {
-            if (Configuration.GetMovieProviderFilter() is { } filter &&
-                filter.Any()) // Apply only if filter is not empty.
-            {
-                // Filter out mismatched results.
-                searchResults.RemoveAll(m => !filter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
-                // Reorder results by stable sort.
-                searchResults = searchResults.OrderBy(m =>
-                    filter.FindIndex(s => s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
-            }
-            else
-            {
-                Logger.Warn("Movie provider filter enabled but never used");
-            }
+            // Filter out mismatched results.
+            searchResults.RemoveAll(m => !providerFilter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
+            // Reorder results by stable sort.
+            searchResults = searchResults.OrderBy(m =>
+                providerFilter.FindIndex(s =>
+                    s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
+        }
+        else if (Configuration.EnableMovieProviderFilter || Configuration.EnableLibraryProviderFilter)
+        {
+            Logger.Warn("Movie provider filter enabled but no effective providers were configured");
         }
 
         var results = new List<RemoteSearchResult>();
@@ -256,6 +258,108 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         return results;
+    }
+
+    private IReadOnlyList<string> GetMovieProviderFilter(MovieInfo info)
+    {
+        if (Configuration.EnableLibraryProviderFilter)
+        {
+            var rules = Configuration.GetLibraryProviderFilters();
+            if (rules.Any())
+            {
+                var libraryName = GetContainingLibraryName(info, rules.Count);
+                var normalizedLibraryName = PluginConfiguration.NormalizeLibraryName(libraryName);
+                var matchedRule = rules.FirstOrDefault(rule =>
+                    PluginConfiguration.NormalizeLibraryName(rule.LibraryName)
+                        .Equals(normalizedLibraryName, StringComparison.OrdinalIgnoreCase));
+
+                if (matchedRule != null)
+                {
+                    Logger.Info("Use movie provider filter for library {0}: {1}", libraryName,
+                        string.Join(',', matchedRule.Providers));
+                    return matchedRule.Providers;
+                }
+
+                if (!string.IsNullOrWhiteSpace(libraryName))
+                {
+                    Logger.Debug("No custom movie provider filter matched library {0}", libraryName);
+                }
+            }
+        }
+
+        return Configuration.EnableMovieProviderFilter
+            ? Configuration.GetMovieProviderFilter() ?? new List<string>()
+            : Array.Empty<string>();
+    }
+
+    private string GetContainingLibraryName(MovieInfo info, int configuredRuleCount)
+    {
+        try
+        {
+            var query = new InternalItemsQuery
+            {
+                Name = info.Name,
+                Recursive = true,
+                MediaTypes = new[] { MediaType.Video },
+#if __EMBY__
+                IncludeItemTypes = new[] { nameof(Movie) }
+#else
+                IncludeItemTypes = new[] { BaseItemKind.Movie }
+#endif
+            };
+
+            var candidates = _libraryManager.GetItemList(query)
+                .Where(candidate => NameMatches(candidate.Name, info.Name))
+                .Where(candidate => !info.Year.HasValue || !candidate.ProductionYear.HasValue ||
+                                    candidate.ProductionYear == info.Year)
+                .Where(candidate => ProviderIdsMatch(candidate, info))
+                .ToList();
+
+            var libraryNames = candidates
+                .SelectMany(candidate => _libraryManager.GetCollectionFolders(candidate))
+                .Select(folder => folder.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .GroupBy(PluginConfiguration.NormalizeLibraryName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+
+            if (libraryNames.Count == 1)
+                return libraryNames[0];
+
+            if (libraryNames.Count > 1)
+            {
+                Logger.Warn("Movie {0} matches multiple libraries ({1}); using global provider filter",
+                    info.Name, string.Join(", ", libraryNames));
+            }
+            else
+            {
+                Logger.Warn("Unable to resolve library for movie {0} across {1} configured rules; using global provider filter",
+                    info.Name, configuredRuleCount);
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.Warn("Unable to resolve media library for movie {0}: {1}", info.Name, exception.Message);
+        }
+
+        return null;
+    }
+
+    private static bool NameMatches(string candidateName, string lookupName)
+    {
+        return PluginConfiguration.NormalizeLibraryName(candidateName)
+            .Equals(PluginConfiguration.NormalizeLibraryName(lookupName), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ProviderIdsMatch(BaseItem candidate, MovieInfo info)
+    {
+        if (info.ProviderIds?.Any() != true)
+            return true;
+
+        return info.ProviderIds.Any(lookupProvider =>
+            !string.IsNullOrWhiteSpace(lookupProvider.Value) &&
+            candidate.ProviderIds.TryGetValue(lookupProvider.Key, out var candidateProviderId) &&
+            candidateProviderId.Equals(lookupProvider.Value, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task SetActorImageUrl(PersonInfo actor, CancellationToken cancellationToken)
