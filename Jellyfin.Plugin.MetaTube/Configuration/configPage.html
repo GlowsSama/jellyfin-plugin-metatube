@@ -3,6 +3,77 @@
 
 <head>
     <title>MetaTube</title>
+    <style>
+        .metaTubeProviderFilter {
+            border: 1px solid rgba(128, 128, 128, 0.45);
+            border-radius: 6px;
+            margin-top: 0.35em;
+            padding: 0 0.85em 0.75em;
+        }
+
+        .metaTubeProviderFilter > summary {
+            align-items: flex-start;
+            cursor: pointer;
+            display: flex;
+            gap: 0.75em;
+            list-style: none;
+            padding: 0.85em 0;
+        }
+
+        .metaTubeProviderFilter > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .metaTubeProviderFilterSummaryText {
+            flex: 1;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .metaTubeProviderFilterCount {
+            opacity: 0.72;
+            white-space: nowrap;
+        }
+
+        .metaTubeProviderFilterChevron {
+            border-bottom: 2px solid currentColor;
+            border-right: 2px solid currentColor;
+            flex: 0 0 auto;
+            height: 0.55em;
+            margin: 0.2em 0.25em 0 0.35em;
+            transform: rotate(45deg);
+            transition: transform 0.15s ease;
+            width: 0.55em;
+        }
+
+        .metaTubeProviderFilter[open] .metaTubeProviderFilterChevron {
+            transform: rotate(225deg);
+        }
+
+        .metaTubeProviderFilterOptions {
+            border-top: 1px solid rgba(128, 128, 128, 0.35);
+            max-height: 24em;
+            overflow-y: auto;
+            padding-top: 0.45em;
+        }
+
+        .metaTubeProviderFilterOption {
+            align-items: center;
+            display: flex;
+            min-height: 2.25em;
+            padding: 0.15em 0.35em;
+        }
+
+        .metaTubeProviderFilterOption:hover {
+            background-color: rgba(128, 128, 128, 0.12);
+        }
+
+        .metaTubeProviderSelectAll {
+            border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+            margin-bottom: 0.25em;
+            padding-bottom: 0.55em;
+        }
+    </style>
 </head>
 
 <body>
@@ -126,11 +197,18 @@
                         <div class="fieldDescription checkboxFieldDescription">Filter and reorder search results from movie providers.</div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtRawMovieProviderFilter">Movie provider filter:</label>
-                        <input id="txtRawMovieProviderFilter" is="emby-input" name="txtRawMovieProviderFilter" type="text"/>
-                        <div class="fieldDescription">Provider names are case-insensitive, with decreasing precedence from left to right, separated by commas.</div>
-                    </div>
+                    <details class="metaTubeProviderFilter" id="movieProviderFilter" open>
+                        <summary>
+                            <span class="metaTubeProviderFilterSummaryText">
+                                <span class="inputLabel inputLabelUnfocused">Movie providers:</span>
+                                <span id="movieProviderFilterSummary">No providers selected</span>
+                            </span>
+                            <span class="metaTubeProviderFilterCount" id="movieProviderFilterCount">0 selected</span>
+                            <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
+                        </summary>
+                        <div class="metaTubeProviderFilterOptions" id="movieProviderFilterOptions" role="group" aria-label="Movie providers"></div>
+                    </details>
+                    <div class="fieldDescription">Select the providers that may supply movie search results. Leaving all providers unchecked keeps every provider.</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JavDB 备用域名：</label>
@@ -318,6 +396,152 @@
             pluginUniqueId: "01cc53ec-c415-4108-bbd4-a684a9801a32"
         };
 
+        var MetaTubeMovieProviders = [
+            "AVBASE",
+            "FANZA",
+            "DUGA",
+            "MGS",
+            "Getchu",
+            "SOD",
+            "FALENO",
+            "DAHLIA",
+            "AV-LEAGUE",
+            "Pcolle",
+            "AVE",
+            "Caribbeancom",
+            "CaribbeancomPR",
+            "10musume",
+            "1Pondo",
+            "HEYZO",
+            "TOKYO-HOT",
+            "H0930",
+            "C0930",
+            "H4610",
+            "KIN8",
+            "PACOPACOMAMA",
+            "MURAMURA",
+            "MYWIFE",
+            "HeyDouga",
+            "Gcolle",
+            "FC2",
+            "FC2PPVDB",
+            "fc2hub",
+            "Fantia",
+            "FantiaPost",
+            "MadouQu",
+            "7MMTV",
+            "MissAV",
+            "JavVerse",
+            "JavLibrary",
+            "JavBus",
+            "JAVFREE",
+            "123AV",
+            "AVMOO",
+            "AVSOX",
+            "Manko",
+            "ThePornDBScene",
+            "ThePornDBMovie",
+            "JavDB"
+        ];
+
+        function splitMovieProviderFilter(value) {
+            var providers = [];
+            (value || "").split(",").forEach(function (provider) {
+                provider = provider.trim();
+                if (provider && !providers.some(function (item) {
+                    return item.toLowerCase() === provider.toLowerCase();
+                })) {
+                    providers.push(provider);
+                }
+            });
+            return providers;
+        }
+
+        function addMovieProviderOption(container, provider) {
+            var label = document.createElement("label");
+            label.className = "metaTubeProviderFilterOption emby-checkbox-label";
+
+            var input = document.createElement("input", { is: "emby-checkbox" });
+            input.type = "checkbox";
+            input.className = "metaTubeMovieProviderFilterOption";
+            input.value = provider;
+
+            var text = document.createElement("span");
+            text.textContent = provider;
+
+            label.appendChild(input);
+            label.appendChild(text);
+            container.appendChild(label);
+        }
+
+        function getSelectedMovieProviders() {
+            return $('.metaTubeMovieProviderFilterOption:checked').map(function () {
+                return this.value;
+            }).get();
+        }
+
+        function updateMovieProviderFilterState() {
+            var selected = getSelectedMovieProviders();
+            var total = $('.metaTubeMovieProviderFilterOption').length;
+            var allProviders = $('#chkAllMovieProviders');
+
+            $('#movieProviderFilterSummary').text(selected.length ? selected.join("、") : "No providers selected");
+            $('#movieProviderFilterCount').text(selected.length + " selected");
+            allProviders.prop("checked", total > 0 && selected.length === total);
+            allProviders.prop("indeterminate", selected.length > 0 && selected.length < total);
+        }
+
+        function renderMovieProviderFilter(value) {
+            var options = $('#movieProviderFilterOptions');
+            var orderedProviders = [];
+            var addProvider = function (provider) {
+                if (provider && !orderedProviders.some(function (item) {
+                    return item.toLowerCase() === provider.toLowerCase();
+                })) {
+                    orderedProviders.push(provider);
+                }
+            };
+
+            splitMovieProviderFilter(value).forEach(addProvider);
+            MetaTubeMovieProviders.forEach(addProvider);
+            options.empty();
+
+            var selectAllLabel = document.createElement("label");
+            selectAllLabel.className =
+                "metaTubeProviderFilterOption metaTubeProviderSelectAll emby-checkbox-label";
+
+            var selectAll = document.createElement("input", { is: "emby-checkbox" });
+            selectAll.id = "chkAllMovieProviders";
+            selectAll.type = "checkbox";
+            selectAllLabel.appendChild(selectAll);
+
+            var selectAllText = document.createElement("span");
+            selectAllText.textContent = "Select all";
+            selectAllLabel.appendChild(selectAllText);
+            options[0].appendChild(selectAllLabel);
+
+            orderedProviders.forEach(function (provider) {
+                addMovieProviderOption(options[0], provider);
+            });
+
+            splitMovieProviderFilter(value).forEach(function (provider) {
+                $('.metaTubeMovieProviderFilterOption').filter(function () {
+                    return this.value.toLowerCase() === provider.toLowerCase();
+                }).prop("checked", true);
+            });
+
+            options.off(".metaTubeProviderFilter")
+                .on("change.metaTubeProviderFilter", ".metaTubeMovieProviderFilterOption",
+                    updateMovieProviderFilterState);
+            $('#chkAllMovieProviders').off(".metaTubeProviderFilter")
+                .on("change.metaTubeProviderFilter", function () {
+                    $('.metaTubeMovieProviderFilterOption').prop("checked", this.checked);
+                    updateMovieProviderFilterState();
+                });
+
+            updateMovieProviderFilterState();
+        }
+
         $('.selectTranslationMode').on('change', function (_) {
             if (this.value === "Disabled") {
                 $('.selectTranslationModeEnabled').css('display', 'none');
@@ -377,7 +601,7 @@
                 $('#txtPrimaryImageRatio', page).val(config.PrimaryImageRatio).change();
                 $('#txtDefaultImageQuality', page).val(config.DefaultImageQuality).change();
                 page.querySelector('#chkEnableMovieProviderFilter').checked = config.EnableMovieProviderFilter;
-                $('#txtRawMovieProviderFilter', page).val(config.RawMovieProviderFilter).change();
+                renderMovieProviderFilter(config.RawMovieProviderFilter);
                 $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
                 $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
@@ -422,7 +646,7 @@
                 config.PrimaryImageRatio = $('#txtPrimaryImageRatio', form).val();
                 config.DefaultImageQuality = $('#txtDefaultImageQuality', form).val();
                 config.EnableMovieProviderFilter = $('#chkEnableMovieProviderFilter', form).prop('checked');
-                config.RawMovieProviderFilter = $('#txtRawMovieProviderFilter', form).val();
+                config.RawMovieProviderFilter = getSelectedMovieProviders().join(",");
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
                 config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');

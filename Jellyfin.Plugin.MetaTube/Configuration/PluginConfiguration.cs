@@ -110,8 +110,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("影片来源过滤")]
-    [Description(
-        "来源名称不区分大小写，按从左到右的优先级从高到低排列，并用英文逗号分隔。")]
+    [Description("勾选需要启用的影片来源；未选择时保留全部来源。")]
 #endif
     public string RawMovieProviderFilter
     {
