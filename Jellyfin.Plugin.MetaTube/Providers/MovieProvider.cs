@@ -227,8 +227,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             // Filter out mismatched results.
             searchResults.RemoveAll(m => !providerFilter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
             // Reorder results by stable sort.
+            var indexedProviderFilter = providerFilter.ToList();
             searchResults = searchResults.OrderBy(m =>
-                providerFilter.FindIndex(s =>
+                indexedProviderFilter.FindIndex(s =>
                     s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
         }
         else if (Configuration.EnableMovieProviderFilter || Configuration.EnableLibraryProviderFilter)
