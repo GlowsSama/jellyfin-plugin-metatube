@@ -410,24 +410,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     private List<BaseItem> FindLibraryCandidates(MovieInfo info)
     {
         var candidates = new Dictionary<Guid, BaseItem>();
-        foreach (var providerId in info.ProviderIds ?? new Dictionary<string, string>())
-        {
-            if (string.IsNullOrWhiteSpace(providerId.Key) || string.IsNullOrWhiteSpace(providerId.Value))
-                continue;
-
-            AddLibraryCandidates(candidates, new InternalItemsQuery
-            {
-                AnyProviderIdEquals = new KeyValuePair<string, string>(providerId.Key, providerId.Value),
-                Recursive = true,
-                MediaTypes = new[] { MediaType.Video },
-#if __EMBY__
-                IncludeItemTypes = new[] { nameof(Movie) }
-#else
-                IncludeItemTypes = new[] { BaseItemKind.Movie }
-#endif
-            }, info);
-        }
-
         if (!string.IsNullOrWhiteSpace(info.Name))
         {
             AddLibraryCandidates(candidates, new InternalItemsQuery
