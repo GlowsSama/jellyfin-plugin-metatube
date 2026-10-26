@@ -34,6 +34,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     private const string Rating = "JP-18+";
 
     private static readonly string[] AvBaseSupportedProviderNames = { "DUGA", "FANZA", "Getchu", "MGS" };
+    private static readonly Regex MediaCodePattern = new(
+        @"(?<![A-Z0-9])(?<prefix>[A-Z][A-Z0-9]{1,15})[\s_-]*(?<number>\d{2,8})(?![A-Z0-9])",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private readonly ILibraryManager _libraryManager;
 
 #if __EMBY__
@@ -268,11 +271,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             var rules = Configuration.GetLibraryProviderFilters();
             if (rules.Any())
             {
-                var libraryName = GetContainingLibraryName(info, rules.Count);
-                var normalizedLibraryName = PluginConfiguration.NormalizeLibraryName(libraryName);
+                var libraryName = GetContainingLibraryName(info, rules);
                 var matchedRule = rules.FirstOrDefault(rule =>
-                    PluginConfiguration.NormalizeLibraryName(rule.LibraryName)
-                        .Equals(normalizedLibraryName, StringComparison.OrdinalIgnoreCase));
+                    LibraryNamesMatch(rule.LibraryName, libraryName));
 
                 if (matchedRule != null)
                 {
@@ -285,58 +286,118 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 {
                     Logger.Debug("No custom movie provider filter matched library {0}", libraryName);
                 }
+                else
+                {
+                    var configuredProviders = rules
+                        .SelectMany(rule => rule.Providers)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (configuredProviders.Any())
+                    {
+                        Logger.Warn(
+                            "Unable to resolve the media library for movie {0}; restricting results to configured library providers: {1}",
+                            info.Name, string.Join(',', configuredProviders));
+                        return RestrictToGlobalMovieProviders(configuredProviders);
+                    }
+                }
             }
         }
 
-        return Configuration.EnableMovieProviderFilter
-            ? Configuration.GetMovieProviderFilter() ?? new List<string>()
-            : Array.Empty<string>();
+        return GetGlobalMovieProviderFilter();
     }
 
-    private string GetContainingLibraryName(MovieInfo info, int configuredRuleCount)
+    private string GetContainingLibraryName(MovieInfo info,
+        IReadOnlyList<LibraryProviderFilterRule> configuredRules)
     {
         try
         {
-            var query = new InternalItemsQuery
+            var candidates = FindLibraryCandidates(info);
+            if (!candidates.Any())
             {
-                Name = info.Name,
-                Recursive = true,
-                MediaTypes = new[] { MediaType.Video },
-#if __EMBY__
-                IncludeItemTypes = new[] { nameof(Movie) }
-#else
-                IncludeItemTypes = new[] { BaseItemKind.Movie }
-#endif
-            };
+                Logger.Warn("Unable to resolve library for movie {0} across {1} configured rules; using global provider filter",
+                    info.Name, configuredRules.Count);
+                return null;
+            }
 
-            var candidates = _libraryManager.GetItemList(query)
-                .Where(candidate => NameMatches(candidate.Name, info.Name))
-                .Where(candidate => !info.Year.HasValue || !candidate.ProductionYear.HasValue ||
-                                    candidate.ProductionYear == info.Year)
-                .Where(candidate => ProviderIdsMatch(candidate, info))
-                .ToList();
+            var matches = new List<(string LibraryName, int Score, BaseItem Candidate)>();
+            foreach (var candidate in candidates)
+            {
+                var score = GetLibraryCandidateMatchScore(candidate, info);
+                foreach (var folder in _libraryManager.GetCollectionFolders(candidate))
+                {
+                    if (!string.IsNullOrWhiteSpace(folder.Name))
+                        matches.Add((folder.Name, score, candidate));
+                }
+            }
 
-            var libraryNames = candidates
-                .SelectMany(candidate => _libraryManager.GetCollectionFolders(candidate))
-                .Select(folder => folder.Name)
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .GroupBy(PluginConfiguration.NormalizeLibraryName, StringComparer.OrdinalIgnoreCase)
+            if (!matches.Any())
+            {
+                Logger.Warn("Unable to resolve library for movie {0} across {1} configured rules; using global provider filter",
+                    info.Name, configuredRules.Count);
+                return null;
+            }
+
+            // Provider IDs identify the exact existing item even when it is present in multiple libraries.
+            if (info.ProviderIds?.Any() == true)
+            {
+                var providerMatches = matches
+                    .Where(match => ProviderIdsMatch(match.Candidate, info))
+                    .Select(match => match.LibraryName)
+                    .GroupBy(GetLibraryNameKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
+                    .ToList();
+
+                if (providerMatches.Count == 1)
+                {
+                    Logger.Debug("Resolved library {0} for movie {1} by provider ID", providerMatches[0],
+                        info.Name);
+                    return providerMatches[0];
+                }
+            }
+
+            var bestScore = matches.Max(match => match.Score);
+            var bestMatches = matches.Where(match => match.Score == bestScore).ToList();
+            var bestLibraryNames = bestMatches
+                .Select(match => match.LibraryName)
+                .GroupBy(GetLibraryNameKey, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .ToList();
 
-            if (libraryNames.Count == 1)
-                return libraryNames[0];
+            if (bestLibraryNames.Count == 1)
+            {
+                Logger.Debug("Resolved library {0} for movie {1} with match score {2}", bestLibraryNames[0],
+                    info.Name, bestScore);
+                return bestLibraryNames[0];
+            }
 
-            if (libraryNames.Count > 1)
+            var configuredLibraryNames = configuredRules
+                .Select(rule => GetLibraryNameKey(rule.LibraryName))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var configuredBestMatches = bestMatches
+                .Where(match => configuredLibraryNames.Contains(GetLibraryNameKey(match.LibraryName)))
+                .Select(match => match.LibraryName)
+                .GroupBy(GetLibraryNameKey, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+
+            if (configuredBestMatches.Count == 1)
             {
-                Logger.Warn("Movie {0} matches multiple libraries ({1}); using global provider filter",
-                    info.Name, string.Join(", ", libraryNames));
+                Logger.Debug("Resolved configured library {0} for movie {1} with match score {2}",
+                    configuredBestMatches[0], info.Name, bestScore);
+                return configuredBestMatches[0];
             }
-            else
-            {
-                Logger.Warn("Unable to resolve library for movie {0} across {1} configured rules; using global provider filter",
-                    info.Name, configuredRuleCount);
-            }
+
+            var allLibraryNames = matches
+                .Select(match => match.LibraryName)
+                .GroupBy(GetLibraryNameKey, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+
+            if (allLibraryNames.Count == 1)
+                return allLibraryNames[0];
+
+            Logger.Warn("Movie {0} matches multiple libraries ({1}); using global provider filter",
+                info.Name, string.Join(", ", allLibraryNames));
         }
         catch (Exception exception)
         {
@@ -346,21 +407,187 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         return null;
     }
 
-    private static bool NameMatches(string candidateName, string lookupName)
+    private List<BaseItem> FindLibraryCandidates(MovieInfo info)
     {
-        return PluginConfiguration.NormalizeLibraryName(candidateName)
-            .Equals(PluginConfiguration.NormalizeLibraryName(lookupName), StringComparison.OrdinalIgnoreCase);
+        var candidates = new Dictionary<Guid, BaseItem>();
+        foreach (var providerId in info.ProviderIds ?? new Dictionary<string, string>())
+        {
+            if (string.IsNullOrWhiteSpace(providerId.Key) || string.IsNullOrWhiteSpace(providerId.Value))
+                continue;
+
+            AddLibraryCandidates(candidates, new InternalItemsQuery
+            {
+                AnyProviderIdEquals = new KeyValuePair<string, string>(providerId.Key, providerId.Value),
+                Recursive = true,
+                MediaTypes = new[] { MediaType.Video },
+#if __EMBY__
+                IncludeItemTypes = new[] { nameof(Movie) }
+#else
+                IncludeItemTypes = new[] { BaseItemKind.Movie }
+#endif
+            }, info);
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.Name))
+        {
+            AddLibraryCandidates(candidates, new InternalItemsQuery
+            {
+                Name = info.Name.Trim(),
+                Recursive = true,
+                MediaTypes = new[] { MediaType.Video },
+#if __EMBY__
+                IncludeItemTypes = new[] { nameof(Movie) }
+#else
+                IncludeItemTypes = new[] { BaseItemKind.Movie }
+#endif
+            }, info);
+        }
+
+        foreach (var searchTerm in GetLibrarySearchTerms(info.Name))
+        {
+            AddLibraryCandidates(candidates, new InternalItemsQuery
+            {
+                SearchTerm = searchTerm,
+                Recursive = true,
+                MediaTypes = new[] { MediaType.Video },
+#if __EMBY__
+                IncludeItemTypes = new[] { nameof(Movie) }
+#else
+                IncludeItemTypes = new[] { BaseItemKind.Movie }
+#endif
+            }, info);
+        }
+
+        return candidates.Values.ToList();
+    }
+
+    private void AddLibraryCandidates(IDictionary<Guid, BaseItem> candidates, InternalItemsQuery query,
+        MovieInfo info)
+    {
+        foreach (var candidate in _libraryManager.GetItemList(query))
+        {
+            if (GetLibraryCandidateMatchScore(candidate, info) > 0)
+                candidates[candidate.Id] = candidate;
+        }
+    }
+
+    private static IEnumerable<string> GetLibrarySearchTerms(string value)
+    {
+        var terms = new List<string>();
+        if (!string.IsNullOrWhiteSpace(value))
+            terms.Add(value.Trim());
+
+        foreach (Match match in MediaCodePattern.Matches(value ?? string.Empty))
+        {
+            terms.Add(match.Value);
+            terms.Add($"{match.Groups["prefix"].Value}{match.Groups["number"].Value}");
+        }
+
+        return terms
+            .Where(term => !string.IsNullOrWhiteSpace(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static int GetLibraryCandidateMatchScore(BaseItem candidate, MovieInfo info)
+    {
+        var score = 0;
+        var lookupCodes = ExtractMediaCodes(info.Name);
+        var candidateCodes = ExtractMediaCodes(candidate.Name)
+            .Concat(ExtractMediaCodes(candidate.OriginalTitle))
+            .Concat(ExtractMediaCodes(candidate.Path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (lookupCodes.Overlaps(candidateCodes))
+            score += 100;
+
+        var lookupName = NormalizeLookupText(info.Name);
+        var candidateNames = new[]
+            {
+                candidate.Name,
+                candidate.OriginalTitle,
+                candidate.Path == null ? null : System.IO.Path.GetFileNameWithoutExtension(candidate.Path)
+            }
+            .Select(NormalizeLookupText)
+            .Where(name => name.Any())
+            .ToList();
+
+        if (candidateNames.Any(name => name.Equals(lookupName, StringComparison.OrdinalIgnoreCase)))
+            score += 80;
+        else if (lookupName.Length >= 4 &&
+                 candidateNames.Any(name => name.Contains(lookupName, StringComparison.OrdinalIgnoreCase) ||
+                                            lookupName.Contains(name, StringComparison.OrdinalIgnoreCase)))
+            score += 40;
+
+        if (ProviderIdsMatch(candidate, info))
+            score += 60;
+
+        if (info.Year.HasValue && candidate.ProductionYear == info.Year)
+            score += 10;
+
+        return score;
+    }
+
+    private static HashSet<string> ExtractMediaCodes(string value)
+    {
+        return MediaCodePattern.Matches(value ?? string.Empty)
+            .Cast<Match>()
+            .Select(match => $"{match.Groups["prefix"].Value}{match.Groups["number"].Value}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeLookupText(string value)
+    {
+        var normalized = PluginConfiguration.NormalizeLibraryName(value);
+        return new string(normalized
+            .Where(character => char.IsLetterOrDigit(character))
+            .Select(char.ToUpperInvariant)
+            .ToArray());
     }
 
     private static bool ProviderIdsMatch(BaseItem candidate, MovieInfo info)
     {
         if (info.ProviderIds?.Any() != true)
-            return true;
+            return false;
 
         return info.ProviderIds.Any(lookupProvider =>
             !string.IsNullOrWhiteSpace(lookupProvider.Value) &&
-            candidate.ProviderIds.TryGetValue(lookupProvider.Key, out var candidateProviderId) &&
+            candidate.ProviderIds?.TryGetValue(lookupProvider.Key, out var candidateProviderId) == true &&
             candidateProviderId.Equals(lookupProvider.Value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IReadOnlyList<string> GetGlobalMovieProviderFilter()
+    {
+        return Configuration.EnableMovieProviderFilter
+            ? Configuration.GetMovieProviderFilter() ?? new List<string>()
+            : Array.Empty<string>();
+    }
+
+    private IReadOnlyList<string> RestrictToGlobalMovieProviders(IReadOnlyList<string> libraryProviders)
+    {
+        if (!Configuration.EnableMovieProviderFilter)
+            return libraryProviders;
+
+        var globalProviders = GetGlobalMovieProviderFilter();
+        if (!globalProviders.Any())
+            return libraryProviders;
+
+        return libraryProviders
+            .Where(provider => globalProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private static bool LibraryNamesMatch(string left, string right)
+    {
+        var leftKey = GetLibraryNameKey(left);
+        var rightKey = GetLibraryNameKey(right);
+        return leftKey.Any() && rightKey.Any() &&
+               leftKey.Equals(rightKey, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetLibraryNameKey(string value)
+    {
+        var key = NormalizeLookupText(value);
+        return key.Any() ? key : PluginConfiguration.NormalizeLibraryName(value);
     }
 
     private async Task SetActorImageUrl(PersonInfo actor, CancellationToken cancellationToken)

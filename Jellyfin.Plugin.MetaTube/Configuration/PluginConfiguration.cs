@@ -125,7 +125,8 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("启用媒体库自定义刮削源")]
-    [Description("启用后，匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。")]
+    [Description(
+        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。无法定位媒体库时，仅保留自定义规则中配置的来源。")]
 #endif
     public bool EnableLibraryProviderFilter { get; set; } = false;
 
