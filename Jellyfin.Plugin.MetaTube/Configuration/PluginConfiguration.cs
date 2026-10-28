@@ -42,13 +42,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public string FlareSolverrEndpoint { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("启用自动更新")]
+    [DisplayName("自动更新")]
     [Description("通过计划任务自动更新插件。")]
     public bool EnableAutoUpdate { get; set; } = true;
 #endif
 
 #if __EMBY__
-    [DisplayName("启用合集")]
+    [DisplayName("合集")]
     [Description("按系列自动创建合集。")]
 #endif
     public bool EnableCollections { get; set; } = false;
@@ -78,7 +78,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableRealActorNames { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("启用角标")]
+    [DisplayName("角标")]
     [Description("为主图添加中文字幕角标。")]
 #endif
     public bool EnableBadges { get; set; } = false;
@@ -126,13 +126,14 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("启用媒体库自定义刮削源")]
     [Description(
-        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。无法定位媒体库时，仅保留自定义规则中配置的来源。")]
+        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。无法定位媒体库时，仅保留自定义规则中配置的来源。自定义来源无结果时，自动使用全部已启用的刮削源兜底。")]
 #endif
     public bool EnableLibraryProviderFilter { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("媒体库自定义刮削源")]
-    [Description("每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,JAVDB")]
+    [Description(
+        "每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,JAVDB\n当指定来源没有搜索结果时，会自动使用全部已启用的刮削源兜底。")]
     [EditMultiline(8)]
 #endif
     public string LibraryProviderFilterRules { get; set; } = string.Empty;

@@ -225,19 +225,20 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         var providerFilter = GetMovieProviderFilter(info);
-        if (providerFilter.Any())
-        {
-            // Filter out mismatched results.
-            searchResults.RemoveAll(m => !providerFilter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
-            // Reorder results by stable sort.
-            var indexedProviderFilter = providerFilter.ToList();
-            searchResults = searchResults.OrderBy(m =>
-                indexedProviderFilter.FindIndex(s =>
-                    s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
-        }
-        else if (Configuration.EnableMovieProviderFilter || Configuration.EnableLibraryProviderFilter)
+        searchResults = ApplyMovieProviderFilter(searchResults, providerFilter);
+        if (!providerFilter.Any() && (Configuration.EnableMovieProviderFilter || Configuration.EnableLibraryProviderFilter))
         {
             Logger.Warn("Movie provider filter enabled but no effective providers were configured");
+        }
+
+        if (!searchResults.Any() && ShouldRetryWithAllEnabledMovieProviders() &&
+            !string.IsNullOrWhiteSpace(info.Name))
+        {
+            Logger.Info(
+                "Custom movie providers returned no results for {0}; retrying with all enabled providers",
+                info.Name);
+            searchResults = await ApiClient.SearchMovieAsync(info.Name, string.Empty, cancellationToken);
+            searchResults = ApplyMovieProviderFilter(searchResults, GetGlobalMovieProviderFilter());
         }
 
         var results = new List<RemoteSearchResult>();
@@ -542,6 +543,29 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         return Configuration.EnableMovieProviderFilter
             ? Configuration.GetMovieProviderFilter() ?? new List<string>()
             : Array.Empty<string>();
+    }
+
+    private bool ShouldRetryWithAllEnabledMovieProviders()
+    {
+        return Configuration.EnableLibraryProviderFilter &&
+               Configuration.GetLibraryProviderFilters().Any();
+    }
+
+    private static List<MovieSearchResult> ApplyMovieProviderFilter(
+        List<MovieSearchResult> searchResults,
+        IReadOnlyList<string> providerFilter)
+    {
+        if (!providerFilter.Any())
+            return searchResults;
+
+        // Filter out mismatched results.
+        searchResults.RemoveAll(m => !providerFilter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
+
+        // Reorder results by stable sort.
+        var indexedProviderFilter = providerFilter.ToList();
+        return searchResults.OrderBy(m =>
+            indexedProviderFilter.FindIndex(s =>
+                s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
     }
 
     private IReadOnlyList<string> RestrictToGlobalMovieProviders(IReadOnlyList<string> libraryProviders)

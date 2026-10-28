@@ -114,7 +114,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableCollections" is="emby-checkbox" name="chkEnableCollections" type="checkbox"/>
-                            <span>Enable collections</span>
+                            <span>合集</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Automatically create collections by series.</div>
                     </div>
@@ -158,7 +158,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableBadges" is="emby-checkbox" name="chkEnableBadges" type="checkbox"/>
-                            <span>Enable badges</span>
+                            <span>角标</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Add Chinese subtitle badges to primary images.</div>
                     </div>
@@ -215,13 +215,13 @@
                             <input id="chkEnableLibraryProviderFilter" is="emby-checkbox" name="chkEnableLibraryProviderFilter" type="checkbox"/>
                             <span>启用媒体库自定义刮削源</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。</div>
+                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。自定义来源无结果时，自动使用全部已启用的刮削源兜底。</div>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtLibraryProviderFilterRules">媒体库自定义刮削源：</label>
                         <textarea class="emby-input" id="txtLibraryProviderFilterRules" is="emby-input" name="txtLibraryProviderFilterRules" rows="8"></textarea>
-                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,JAVDB。媒体库名称支持空格、中文和 | 等符号。</div>
+                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,JAVDB。媒体库名称支持空格、中文和 | 等符号。当指定来源没有搜索结果时，会自动使用全部已启用的刮削源兜底。</div>
                     </div>
 
                     <div class="inputContainer">
