@@ -42,37 +42,37 @@ public class PluginConfiguration : BasePluginConfiguration
     public string FlareSolverrEndpoint { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("自动更新")]
+    [DisplayName("允许自动更新")]
     [Description("通过计划任务自动更新插件。")]
     public bool EnableAutoUpdate { get; set; } = true;
 #endif
 
 #if __EMBY__
-    [DisplayName("合集")]
+    [DisplayName("使用合集")]
     [Description("按系列自动创建合集。")]
 #endif
     public bool EnableCollections { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("启用导演信息")]
+    [DisplayName("使用导演信息")]
     [Description("为对应视频的元数据添加导演信息。")]
 #endif
     public bool EnableDirectors { get; set; } = true;
 
 #if __EMBY__
-    [DisplayName("启用评分")]
+    [DisplayName("评分系统")]
     [Description("显示原始网站的用户评分。")]
 #endif
     public bool EnableRatings { get; set; } = true;
 
 #if __EMBY__
-    [DisplayName("启用预告片")]
+    [DisplayName("开启预告片")]
     [Description("生成 strm 格式的在线视频预告片。")]
 #endif
     public bool EnableTrailers { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("启用真实演员姓名")]
+    [DisplayName("使用演员真实信息")]
     [Description("从 AVBASE 搜索并替换为真实演员姓名。")]
 #endif
     public bool EnableRealActorNames { get; set; } = false;
@@ -107,11 +107,16 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("启用影片来源过滤")]
     [Description("过滤并重新排序影片来源的搜索结果。")]
+    [Browsable(false)]
 #endif
-    public bool EnableMovieProviderFilter { get; set; } = false;
+    public bool EnableMovieProviderFilter
+    {
+        get => true;
+        set { }
+    }
 
 #if __EMBY__
-    [DisplayName("影片来源过滤")]
+    [DisplayName("影片刮削源过滤")]
     [Description("勾选需要启用的影片来源；未选择时保留全部来源。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(MovieProviderOptions))]

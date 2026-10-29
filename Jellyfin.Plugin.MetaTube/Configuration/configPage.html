@@ -114,7 +114,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableCollections" is="emby-checkbox" name="chkEnableCollections" type="checkbox"/>
-                            <span>合集</span>
+                            <span>使用合集</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Automatically create collections by series.</div>
                     </div>
@@ -122,7 +122,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableDirectors" is="emby-checkbox" name="chkEnableDirectors" type="checkbox"/>
-                            <span>Enable directors</span>
+                            <span>使用导演信息</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Add directors to corresponding video metadata.</div>
                     </div>
@@ -130,7 +130,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableRatings" is="emby-checkbox" name="chkEnableRatings" type="checkbox"/>
-                            <span>Enable ratings</span>
+                            <span>评分系统</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Display community ratings from the original website.</div>
                     </div>
@@ -138,7 +138,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableTrailers" is="emby-checkbox" name="chkEnableTrailers" type="checkbox"/>
-                            <span>Enable trailers</span>
+                            <span>开启预告片</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Generate online video trailers in strm format.</div>
                     </div>
@@ -146,7 +146,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableRealActorNames" is="emby-checkbox" name="chkEnableRealActorNames" type="checkbox"/>
-                            <span>Enable real actor names</span>
+                            <span>使用演员真实信息</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Search and replace with real actor names from AVBASE.</div>
                     </div>
@@ -189,26 +189,18 @@
                 <div class="verticalSection">
                     <h2 class="sectionTitle">Provider</h2>
 
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkEnableMovieProviderFilter" is="emby-checkbox" name="chkEnableMovieProviderFilter" type="checkbox"/>
-                            <span>Enable movie provider filter</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">Filter and reorder search results from movie providers.</div>
-                    </div>
-
                     <details class="metaTubeProviderFilter" id="movieProviderFilter" open>
                         <summary>
                             <span class="metaTubeProviderFilterSummaryText">
-                                <span class="inputLabel inputLabelUnfocused">Movie providers:</span>
-                                <span id="movieProviderFilterSummary">No providers selected</span>
+                                <span class="inputLabel inputLabelUnfocused">影片刮削源过滤：</span>
+                                <span id="movieProviderFilterSummary">未选择来源</span>
                             </span>
-                            <span class="metaTubeProviderFilterCount" id="movieProviderFilterCount">0 selected</span>
+                            <span class="metaTubeProviderFilterCount" id="movieProviderFilterCount">已选择 0 个</span>
                             <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
                         </summary>
-                        <div class="metaTubeProviderFilterOptions" id="movieProviderFilterOptions" role="group" aria-label="Movie providers"></div>
+                        <div class="metaTubeProviderFilterOptions" id="movieProviderFilterOptions" role="group" aria-label="影片刮削源过滤"></div>
                     </details>
-                    <div class="fieldDescription">Select the providers that may supply movie search results. Leaving all providers unchecked keeps every provider.</div>
+                    <div class="fieldDescription">勾选需要启用的影片来源；未选择时保留全部来源。</div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
@@ -499,8 +491,8 @@
             var total = $('.metaTubeMovieProviderFilterOption').length;
             var allProviders = $('#chkAllMovieProviders');
 
-            $('#movieProviderFilterSummary').text(selected.length ? selected.join("、") : "No providers selected");
-            $('#movieProviderFilterCount').text(selected.length + " selected");
+            $('#movieProviderFilterSummary').text(selected.length ? selected.join("、") : "未选择来源");
+            $('#movieProviderFilterCount').text("已选择 " + selected.length + " 个");
             allProviders.prop("checked", total > 0 && selected.length === total);
             allProviders.prop("indeterminate", selected.length > 0 && selected.length < total);
         }
@@ -530,7 +522,7 @@
             selectAllLabel.appendChild(selectAll);
 
             var selectAllText = document.createElement("span");
-            selectAllText.textContent = "Select all";
+            selectAllText.textContent = "全选";
             selectAllLabel.appendChild(selectAllText);
             options[0].appendChild(selectAllLabel);
 
@@ -614,7 +606,7 @@
                 $('#txtBadgeUrl', page).val(config.BadgeUrl).change();
                 $('#txtPrimaryImageRatio', page).val(config.PrimaryImageRatio).change();
                 $('#txtDefaultImageQuality', page).val(config.DefaultImageQuality).change();
-                page.querySelector('#chkEnableMovieProviderFilter').checked = config.EnableMovieProviderFilter;
+                config.EnableMovieProviderFilter = true;
                 renderMovieProviderFilter(config.RawMovieProviderFilter);
                 page.querySelector('#chkEnableLibraryProviderFilter').checked = config.EnableLibraryProviderFilter;
                 $('#txtLibraryProviderFilterRules', page).val(config.LibraryProviderFilterRules).change();
@@ -661,7 +653,7 @@
                 config.BadgeUrl = $('#txtBadgeUrl', form).val();
                 config.PrimaryImageRatio = $('#txtPrimaryImageRatio', form).val();
                 config.DefaultImageQuality = $('#txtDefaultImageQuality', form).val();
-                config.EnableMovieProviderFilter = $('#chkEnableMovieProviderFilter', form).prop('checked');
+                config.EnableMovieProviderFilter = true;
                 config.RawMovieProviderFilter = getSelectedMovieProviders().join(",");
                 config.EnableLibraryProviderFilter = $('#chkEnableLibraryProviderFilter', form).prop('checked');
                 config.LibraryProviderFilterRules = $('#txtLibraryProviderFilterRules', form).val();
