@@ -48,13 +48,13 @@ public class PluginConfiguration : BasePluginConfiguration
 #endif
 
 #if __EMBY__
-    [DisplayName("使用合集")]
+    [DisplayName("自动创建合集")]
     [Description("按系列自动创建合集。")]
 #endif
     public bool EnableCollections { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("使用导演信息")]
+    [DisplayName("添加导演信息")]
     [Description("为对应视频的元数据添加导演信息。")]
 #endif
     public bool EnableDirectors { get; set; } = true;
@@ -66,7 +66,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableRatings { get; set; } = true;
 
 #if __EMBY__
-    [DisplayName("开启预告片")]
+    [DisplayName("刮削预告片")]
     [Description("生成 strm 格式的在线视频预告片。")]
 #endif
     public bool EnableTrailers { get; set; } = false;
@@ -78,7 +78,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableRealActorNames { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("角标")]
+    [DisplayName("给封面使用角标")]
     [Description("为主图添加中文字幕角标。")]
 #endif
     public bool EnableBadges { get; set; } = false;
