@@ -208,13 +208,24 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Plugin.ProviderId);
+        var providerFilter = GetMovieProviderFilter(info);
 
         var searchResults = new List<MovieSearchResult>();
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
         {
             // Search movie by name.
             Logger.Info("Search for movie: {0}", info.Name);
-            searchResults.AddRange(await ApiClient.SearchMovieAsync(info.Name, pid.Provider, cancellationToken));
+            if (providerFilter.Any())
+            {
+                Logger.Info("Search movie {0} with custom providers: {1}", info.Name,
+                    string.Join(',', providerFilter));
+                searchResults.AddRange(
+                    await SearchMoviesByProvidersAsync(info.Name, providerFilter, cancellationToken));
+            }
+            else
+            {
+                searchResults.AddRange(await ApiClient.SearchMovieAsync(info.Name, pid.Provider, cancellationToken));
+            }
         }
         else
         {
@@ -224,7 +235,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 pid.Update != true, cancellationToken));
         }
 
-        var providerFilter = GetMovieProviderFilter(info);
         searchResults = ApplyMovieProviderFilter(searchResults, providerFilter);
         if (!providerFilter.Any() && (Configuration.EnableMovieProviderFilter || Configuration.EnableLibraryProviderFilter))
         {
@@ -263,6 +273,41 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         return results;
+    }
+
+    private async Task<List<MovieSearchResult>> SearchMoviesByProvidersAsync(string keyword,
+        IReadOnlyList<string> providers, CancellationToken cancellationToken)
+    {
+        var searches = providers.Select(async provider =>
+        {
+            try
+            {
+                var results = await ApiClient.SearchMovieAsync(keyword, provider, cancellationToken);
+                return results ?? new List<MovieSearchResult>();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Logger.Warn("Search provider {0} failed for movie {1}: {2}", provider, keyword,
+                    exception.Message);
+                return new List<MovieSearchResult>();
+            }
+        });
+
+        var resultsByProvider = await Task.WhenAll(searches);
+        var combined = new List<MovieSearchResult>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var result in resultsByProvider.SelectMany(results => results))
+        {
+            if (seen.Add($"{result.Provider}\n{result.Id}"))
+                combined.Add(result);
+        }
+
+        return combined;
     }
 
     private IReadOnlyList<string> GetMovieProviderFilter(MovieInfo info)
