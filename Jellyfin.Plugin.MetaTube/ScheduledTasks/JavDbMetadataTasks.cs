@@ -18,7 +18,6 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 public abstract class JavDbMetadataTaskBase : IScheduledTask
 {
     private const string JavDbProvider = "JavDB";
-    private const string ChineseSubtitle = "中文字幕";
     private static readonly TimeSpan IncrementalLookback = TimeSpan.FromHours(48);
     private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(1);
     private static readonly Regex Fc2NumberPattern = new(
@@ -80,12 +79,12 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 #else
             IncludeItemTypes = new[] { BaseItemKind.Movie }
 #endif
-        });
+        }).ToList();
 
         if (IsIncremental)
         {
             var cutoff = DateTimeOffset.UtcNow.Subtract(IncrementalLookback);
-            items = items.Where(item => GetDateCreatedUtc(item) >= cutoff);
+            items = items.Where(item => GetDateCreatedUtc(item) >= cutoff).ToList();
         }
 
         var itemList = items.ToList();
@@ -105,24 +104,23 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
             try
             {
+                if ((item.Genres?.Length ?? 0) > 0 || (item.Tags?.Length ?? 0) > 0)
+                {
+                    await ReplaceGenresAndTagsAsync(
+                            item, Array.Empty<string>(), Array.Empty<string>(), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
                     .ConfigureAwait(false);
-                var genres = BuildGenres(item, info.Genres);
+                var genres = BuildGenres(info.Genres);
                 var tags = BuildTags(info.Series, info.Maker, info.Label);
 
                 if (!HasSameValues(item.Genres, genres) || !HasSameValues(item.Tags, tags))
                 {
-                    item.Genres = genres;
-                    item.Tags = tags;
-
                     _logger.Info("Update JAVDB genres and tags for video: {0}", item.Name);
-#if __EMBY__
-                    _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
-#else
-                    await _libraryManager
-                        .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
+                    await ReplaceGenresAndTagsAsync(item, genres, tags, cancellationToken)
                         .ConfigureAwait(false);
-#endif
                     updated++;
                 }
             }
@@ -217,16 +215,27 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             : string.Empty;
     }
 
-    private static string[] BuildGenres(BaseItem item, IEnumerable<string> javDbGenres)
+    private async Task ReplaceGenresAndTagsAsync(
+        BaseItem item,
+        string[] genres,
+        string[] tags,
+        CancellationToken cancellationToken)
     {
-        var genres = CleanValues(javDbGenres).ToList();
-        if (item.Genres?.Contains(ChineseSubtitle, StringComparer.OrdinalIgnoreCase) == true &&
-            !genres.Contains(ChineseSubtitle, StringComparer.OrdinalIgnoreCase))
-        {
-            genres.Add(ChineseSubtitle);
-        }
+        item.Genres = genres;
+        item.Tags = tags;
+#if __EMBY__
+        _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
+        await Task.CompletedTask.ConfigureAwait(false);
+#else
+        await _libraryManager
+            .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
+            .ConfigureAwait(false);
+#endif
+    }
 
-        return genres.ToArray();
+    private static string[] BuildGenres(IEnumerable<string> javDbGenres)
+    {
+        return CleanValues(javDbGenres).ToArray();
     }
 
     private static string[] BuildTags(params string[] values)
@@ -281,9 +290,9 @@ public sealed class JavDbMetadataFullTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "手动扫描全部影片，用 JAVDB 替换流派和标签；失败影片保留原数据。";
+        "手动扫描全部影片，先清空现有流派和标签，再写入 JAVDB 返回结果。";
 #else
-        "Scans all movies and replaces genres and tags with JAVDB metadata. Failed items are unchanged.";
+        "Scans all movies, clears existing genres and tags, and then writes JAVDB metadata.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -319,9 +328,9 @@ public sealed class JavDbMetadataIncrementalTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "每天处理最近 48 小时内入库的影片，用 JAVDB 替换流派和标签。";
+        "每天处理最近 48 小时内入库的影片，先清空现有流派和标签，再写入 JAVDB 返回结果。";
 #else
-        "Processes movies added in the last 48 hours and replaces genres and tags with JAVDB metadata.";
+        "Processes movies added in the last 48 hours, clears existing genres and tags, and then writes JAVDB metadata.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
