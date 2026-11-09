@@ -86,7 +86,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("JAVDB 成功记录")]
     [Description(
-        "每行一条成功记录，最多保留 10000 条。格式：番号、名称、项目 ID、更新时间、说明，字段之间使用 Tab 分隔。清空成功和失败记录后，下次补全任务将执行全量更新。")]
+        "每行一条成功记录，最多保留 10000 条。格式：番号、名称、项目 ID、更新时间、说明，字段之间使用 Tab 分隔。补全任务始终扫描全部影片，并跳过这里的成功项目；成功记录为空或较少时接近全量更新。")]
     [EditMultiline(12)]
 #endif
     public string JavDbMetadataSuccessRecords { get; set; } = string.Empty;
@@ -94,7 +94,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("JAVDB 失败记录")]
     [Description(
-        "每行一条失败记录，最多保留 10000 条。增量补全任务会自动重试这里仍存在的项目；可从表单中删除单条记录，或清空全部记录。")]
+        "每行一条失败记录，最多保留 10000 条。补全任务会自动重试这里仍存在的项目；可从表单中删除单条记录，或清空全部记录。")]
     [EditMultiline(12)]
 #endif
     public string JavDbMetadataFailureRecords { get; set; } = string.Empty;

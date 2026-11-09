@@ -24,7 +24,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     private const string JavDbProvider = "JavDB";
     private const string StateFileName = "javdb-metadata-incremental-state.json";
     private const int MaxRecordsPerTable = 10000;
-    private static readonly TimeSpan IncrementalLookback = TimeSpan.FromHours(48);
     private static readonly TimeSpan JavDbRequestInterval = TimeSpan.FromSeconds(10);
     private static readonly SemaphoreSlim JavDbRequestGate = new(1, 1);
     private static readonly SemaphoreSlim StateFileLock = new(1, 1);
@@ -99,42 +98,36 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }).ToList();
 
         var state = await LoadStateAsync(cancellationToken).ConfigureAwait(false);
-        if (state.Successes.Count > 0 || state.Failures.Count > 0)
-        {
-            var cutoff = DateTimeOffset.UtcNow.Subtract(IncrementalLookback);
-            var failedItemIds = state.Failures
-                .Select(record => record.ItemId)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var failedKeywords = state.Failures
-                .Select(record => record.Keyword)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var successfulItemIds = state.Successes
-                .Select(record => record.ItemId)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var successfulKeywords = state.Successes
-                .Select(record => record.Keyword)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var failedItemIds = state.Failures
+            .Select(record => record.ItemId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var failedKeywords = state.Failures
+            .Select(record => record.Keyword)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var successfulItemIds = state.Successes
+            .Select(record => record.ItemId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var successfulKeywords = state.Successes
+            .Select(record => record.Keyword)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            items = items
-                .Where(item =>
-                {
-                    var itemId = item.Id.ToString("N");
-                    var keyword = GetJavDbKeyword(item);
-                    var isFailed = failedItemIds.Contains(itemId) ||
-                                   (!string.IsNullOrWhiteSpace(keyword) && failedKeywords.Contains(keyword));
-                    var isSuccessful = successfulItemIds.Contains(itemId) ||
-                                       (!string.IsNullOrWhiteSpace(keyword) && successfulKeywords.Contains(keyword));
+        items = items
+            .Where(item =>
+            {
+                var itemId = item.Id.ToString("N");
+                var keyword = GetJavDbKeyword(item);
+                var isFailed = failedItemIds.Contains(itemId) ||
+                               (!string.IsNullOrWhiteSpace(keyword) && failedKeywords.Contains(keyword));
+                var isSuccessful = successfulItemIds.Contains(itemId) ||
+                                   (!string.IsNullOrWhiteSpace(keyword) && successfulKeywords.Contains(keyword));
 
-                    // A failed item is retried even when it was recently successful.
-                    return isFailed ||
-                           (GetDateCreatedUtc(item) >= cutoff && !isSuccessful);
-                })
-                .ToList();
-        }
+                return isFailed || !isSuccessful;
+            })
+            .ToList();
 
         var itemList = items
             .GroupBy(item => item.Id)
@@ -595,10 +588,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             .SequenceEqual(expected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
 
-    private static DateTimeOffset GetDateCreatedUtc(BaseItem item)
-    {
-        return item.DateCreated.ToUniversalTime();
-    }
 }
 
 public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
@@ -628,9 +617,9 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "成功和失败记录都为空时扫描全部影片；否则处理最近 48 小时内入库的影片并重试失败记录。执行时先清空现有流派、标签和工作室，再写入 JAVDB 数据。记录可在插件设置中删除；删除两张记录表后，下次执行将自动全量更新。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "每次扫描全部影片，并跳过成功记录中的项目；失败记录会自动重试。执行时先清空现有流派、标签和工作室，再写入 JAVDB 数据。成功记录为空或较少时会接近全量更新。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
-        "Scans all movies when both success and failure tables are empty; otherwise processes movies added in the last 48 hours and retries failures. Existing genres, tags and studios are cleared before JAVDB metadata is written. Clear both record tables in the plugin settings to force a full update. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
+        "Scans all movies on every run and skips items present in the success table; failures are retried automatically. Existing genres, tags and studios are cleared before JAVDB metadata is written. When the success table is empty or sparse, the task behaves close to a full update. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
