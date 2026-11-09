@@ -131,7 +131,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 OfficialRating = Rating,
                 PremiereDate = m.ReleaseDate.GetValidDateTime(),
                 ProductionYear = m.ReleaseDate.GetValidYear(),
-                Genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>()
+                Genres = Configuration.EnableGenreAndTagScraping && m.Genres?.Any() == true
+                    ? m.Genres
+                    : Array.Empty<string>()
             },
             HasMetadata = true
         };
@@ -161,17 +163,20 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         if (!string.IsNullOrWhiteSpace(m.Maker))
             result.Item.AddStudio(m.Maker);
 
-        // Add tag (series).
-        if (!string.IsNullOrWhiteSpace(m.Series))
-            result.Item.AddTag(m.Series);
+        if (Configuration.EnableGenreAndTagScraping)
+        {
+            // Add tag (series).
+            if (!string.IsNullOrWhiteSpace(m.Series))
+                result.Item.AddTag(m.Series);
 
-        // Add tag (maker).
-        if (!string.IsNullOrWhiteSpace(m.Maker))
-            result.Item.AddTag(m.Maker);
+            // Add tag (maker).
+            if (!string.IsNullOrWhiteSpace(m.Maker))
+                result.Item.AddTag(m.Maker);
 
-        // Add tag (label).
-        if (!string.IsNullOrWhiteSpace(m.Label))
-            result.Item.AddTag(m.Label);
+            // Add tag (label).
+            if (!string.IsNullOrWhiteSpace(m.Label))
+                result.Item.AddTag(m.Label);
+        }
 
         // Add director.
         if (Configuration.EnableDirectors && !string.IsNullOrWhiteSpace(m.Director))

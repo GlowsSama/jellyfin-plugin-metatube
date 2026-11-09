@@ -78,6 +78,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableRealActorNames { get; set; } = false;
 
 #if __EMBY__
+    [DisplayName("刮削流派和标签")]
+    [Description("开启后，普通刮削会写入来源的流派和标签；关闭后不写入，可使用 JAVDB 计划任务补全。")]
+#endif
+    public bool EnableGenreAndTagScraping { get; set; } = true;
+
+#if __EMBY__
     [DisplayName("给封面使用角标")]
     [Description("为主图添加中文字幕角标。")]
 #endif

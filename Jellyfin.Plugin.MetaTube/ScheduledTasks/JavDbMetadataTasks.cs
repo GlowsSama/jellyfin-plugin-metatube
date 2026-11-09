@@ -1,5 +1,8 @@
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.MetaTube.Extensions;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -18,8 +21,17 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 public abstract class JavDbMetadataTaskBase : IScheduledTask
 {
     private const string JavDbProvider = "JavDB";
+    private const string StateFileName = "javdb-metadata-incremental-state.json";
     private static readonly TimeSpan IncrementalLookback = TimeSpan.FromHours(48);
-    private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan JavDbRequestInterval = TimeSpan.FromSeconds(10);
+    private static readonly SemaphoreSlim JavDbRequestGate = new(1, 1);
+    private static readonly SemaphoreSlim StateFileLock = new(1, 1);
+    private static DateTimeOffset _lastJavDbRequestUtc = DateTimeOffset.MinValue;
+    private static readonly JsonSerializerOptions StateJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
     private static readonly Regex Fc2NumberPattern = new(
         @"(?i)(?<![A-Z0-9])FC2(?:[-_\s]?PPV)?[-_\s]?(?<number>\d{5,})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -35,18 +47,23 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger _logger;
+    private readonly string _stateFilePath;
 
 #if __EMBY__
-    protected JavDbMetadataTaskBase(ILogManager logManager, ILibraryManager libraryManager)
+    protected JavDbMetadataTaskBase(ILogManager logManager, ILibraryManager libraryManager,
+        IApplicationPaths applicationPaths)
     {
         _logger = logManager.CreateLogger<JavDbMetadataTaskBase>();
         _libraryManager = libraryManager;
+        _stateFilePath = Path.Combine(applicationPaths.PluginConfigurationsPath, StateFileName);
     }
 #else
-    protected JavDbMetadataTaskBase(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager)
+    protected JavDbMetadataTaskBase(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager,
+        IApplicationPaths applicationPaths)
     {
         _logger = logger;
         _libraryManager = libraryManager;
+        _stateFilePath = Path.Combine(applicationPaths.PluginConfigurationsPath, StateFileName);
     }
 #endif
 
@@ -111,6 +128,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         .ConfigureAwait(false);
                 }
 
+                await WaitForJavDbRequestSlotAsync(cancellationToken).ConfigureAwait(false);
                 var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
                     .ConfigureAwait(false);
                 var genres = BuildGenres(info.Genres);
@@ -123,6 +141,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         .ConfigureAwait(false);
                     updated++;
                 }
+
+                await TryRecordIncrementalResultAsync(item, keyword, true, string.Empty, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -133,14 +154,121 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 failed++;
                 _logger.Error("Update JAVDB genres and tags for video {0} failed: {1}",
                     item.Name, exception.Message);
+                await TryRecordIncrementalResultAsync(item, keyword, false, exception.Message, cancellationToken)
+                    .ConfigureAwait(false);
             }
-
-            if (index < itemList.Count - 1)
-                await Task.Delay(RequestInterval, cancellationToken).ConfigureAwait(false);
         }
 
-        _logger.Info("JAVDB metadata task completed: updated={0}, failed={1}", updated, failed);
+        _logger.Info("JAVDB metadata task completed: updated={0}, failed={1}, state={2}",
+            updated, failed, IsIncremental ? _stateFilePath : "not used for full task");
         progress?.Report(100);
+    }
+
+    private static async Task WaitForJavDbRequestSlotAsync(CancellationToken cancellationToken)
+    {
+        await JavDbRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var elapsed = DateTimeOffset.UtcNow - _lastJavDbRequestUtc;
+            if (elapsed < JavDbRequestInterval)
+            {
+                await Task.Delay(JavDbRequestInterval - elapsed, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            _lastJavDbRequestUtc = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            JavDbRequestGate.Release();
+        }
+    }
+
+    private async Task TryRecordIncrementalResultAsync(BaseItem item, string keyword, bool success,
+        string message, CancellationToken cancellationToken)
+    {
+        if (!IsIncremental)
+            return;
+
+        try
+        {
+            await RecordIncrementalResultAsync(item, keyword, success, message, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Write JAVDB incremental task state failed: {0}", exception.Message);
+        }
+    }
+
+    private async Task RecordIncrementalResultAsync(BaseItem item, string keyword, bool success,
+        string message, CancellationToken cancellationToken)
+    {
+        await StateFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var state = await ReadStateAsync(cancellationToken).ConfigureAwait(false);
+            state.LastRunAtUtc = DateTimeOffset.UtcNow;
+            state.Items.RemoveAll(record =>
+                string.Equals(record.ItemId, item.Id.ToString("N"), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(record.Keyword, keyword, StringComparison.OrdinalIgnoreCase));
+            state.Items.Add(new JavDbIncrementalItemState
+            {
+                ItemId = item.Id.ToString("N"),
+                Name = item.Name,
+                Keyword = keyword,
+                Status = success ? "success" : "failed",
+                Message = message ?? string.Empty,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            });
+
+            state.Items = state.Items
+                .OrderByDescending(record => record.UpdatedAtUtc)
+                .Take(2000)
+                .ToList();
+
+            Directory.CreateDirectory(Path.GetDirectoryName(_stateFilePath) ?? ".");
+            var temporaryPath = $"{_stateFilePath}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                var json = JsonSerializer.Serialize(state, StateJsonOptions);
+                await File.WriteAllTextAsync(temporaryPath, json, Encoding.UTF8, cancellationToken)
+                    .ConfigureAwait(false);
+                File.Move(temporaryPath, _stateFilePath, true);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
+        }
+        finally
+        {
+            StateFileLock.Release();
+        }
+    }
+
+    private async Task<JavDbIncrementalState> ReadStateAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_stateFilePath))
+            return new JavDbIncrementalState();
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(_stateFilePath, cancellationToken).ConfigureAwait(false);
+            return JsonSerializer.Deserialize<JavDbIncrementalState>(json, StateJsonOptions)
+                   ?? new JavDbIncrementalState();
+        }
+        catch (JsonException exception)
+        {
+            _logger.Warn("JAVDB incremental task state file is invalid, starting a new one: {0}",
+                exception.Message);
+            return new JavDbIncrementalState();
+        }
     }
 
     internal static string GetJavDbKeyword(BaseItem item)
@@ -266,13 +394,15 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 public sealed class JavDbMetadataFullTask : JavDbMetadataTaskBase
 {
 #if __EMBY__
-    public JavDbMetadataFullTask(ILogManager logManager, ILibraryManager libraryManager)
-        : base(logManager, libraryManager)
+    public JavDbMetadataFullTask(ILogManager logManager, ILibraryManager libraryManager,
+        IApplicationPaths applicationPaths)
+        : base(logManager, libraryManager, applicationPaths)
     {
     }
 #else
-    public JavDbMetadataFullTask(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager)
-        : base(logger, libraryManager)
+    public JavDbMetadataFullTask(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager,
+        IApplicationPaths applicationPaths)
+        : base(logger, libraryManager, applicationPaths)
     {
     }
 #endif
@@ -283,16 +413,16 @@ public sealed class JavDbMetadataFullTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "JAVDB 全量补全流派和标签";
+        "JAVDB 全量补全流派和标签 (beta)";
 #else
-        "JAVDB Full Genre and Tag Refresh";
+        "JAVDB Full Genre and Tag Refresh (beta)";
 #endif
 
     public override string Description =>
 #if __EMBY__
-        "手动扫描全部影片，先清空现有流派和标签，再写入 JAVDB 返回结果。";
+        "手动扫描全部影片，先清空现有流派和标签，再写入 JAVDB 返回结果。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
-        "Scans all movies, clears existing genres and tags, and then writes JAVDB metadata.";
+        "Scans all movies, clears existing genres and tags, and then writes JAVDB metadata. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -304,13 +434,15 @@ public sealed class JavDbMetadataFullTask : JavDbMetadataTaskBase
 public sealed class JavDbMetadataIncrementalTask : JavDbMetadataTaskBase
 {
 #if __EMBY__
-    public JavDbMetadataIncrementalTask(ILogManager logManager, ILibraryManager libraryManager)
-        : base(logManager, libraryManager)
+    public JavDbMetadataIncrementalTask(ILogManager logManager, ILibraryManager libraryManager,
+        IApplicationPaths applicationPaths)
+        : base(logManager, libraryManager, applicationPaths)
     {
     }
 #else
-    public JavDbMetadataIncrementalTask(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager)
-        : base(logger, libraryManager)
+    public JavDbMetadataIncrementalTask(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager,
+        IApplicationPaths applicationPaths)
+        : base(logger, libraryManager, applicationPaths)
     {
     }
 #endif
@@ -321,16 +453,16 @@ public sealed class JavDbMetadataIncrementalTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "JAVDB 夜间增量补全流派和标签";
+        "JAVDB 夜间增量补全流派和标签 (beta)";
 #else
-        "JAVDB Nightly Genre and Tag Refresh";
+        "JAVDB Nightly Genre and Tag Refresh (beta)";
 #endif
 
     public override string Description =>
 #if __EMBY__
-        "每天处理最近 48 小时内入库的影片，先清空现有流派和标签，再写入 JAVDB 返回结果。";
+        "每天处理最近 48 小时内入库的影片，先清空现有流派和标签，再写入 JAVDB 返回结果。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点，成功或失败结果会记录到状态文件。";
 #else
-        "Processes movies added in the last 48 hours, clears existing genres and tags, and then writes JAVDB metadata.";
+        "Processes movies added in the last 48 hours, clears existing genres and tags, and then writes JAVDB metadata. Requests are spaced by at least 10 seconds, fall back to configured backup domains when needed, and item results are recorded in a state file.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -345,4 +477,26 @@ public sealed class JavDbMetadataIncrementalTask : JavDbMetadataTaskBase
             TimeOfDayTicks = TimeSpan.FromHours(4).Ticks
         };
     }
+}
+
+public sealed class JavDbIncrementalState
+{
+    public DateTimeOffset LastRunAtUtc { get; set; }
+
+    public List<JavDbIncrementalItemState> Items { get; set; } = new();
+}
+
+public sealed class JavDbIncrementalItemState
+{
+    public string ItemId { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public string Keyword { get; set; } = string.Empty;
+
+    public string Status { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
 }
