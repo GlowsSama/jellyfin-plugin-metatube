@@ -1,5 +1,6 @@
 using System.Text;
 using Jellyfin.Plugin.MetaTube.Helpers;
+using Jellyfin.Plugin.MetaTube.ScheduledTasks;
 using Jellyfin.Plugin.MetaTube.Translation;
 #if __EMBY__
 using System.ComponentModel;
@@ -85,17 +86,55 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 成功记录")]
-    [Description(
-        "每行一条成功记录，最多保留 10000 条。格式：番号、名称、项目 ID、更新时间、说明，字段之间使用 Tab 分隔。补全任务始终扫描全部影片，并跳过这里的成功项目；成功记录为空或较少时接近全量更新。")]
-    [EditMultiline(12)]
+    [Description("只读统计。成功记录保存在插件配置目录的 JSON 状态文件中，最多保留 10000 条。")]
+    [ReadOnly(true)]
+#endif
+    public int JavDbMetadataSuccessCount => GetJavDbMetadataSummary().SuccessCount;
+
+#if __EMBY__
+    [DisplayName("JAVDB 失败记录")]
+    [Description("只读统计。失败记录会在下次任务运行时自动重试，最多保留 10000 条。")]
+    [ReadOnly(true)]
+#endif
+    public int JavDbMetadataFailureCount => GetJavDbMetadataSummary().FailureCount;
+
+#if __EMBY__
+    [DisplayName("JAVDB 上次运行")]
+    [Description("只读统计。时间按 Emby 服务器本地时区显示。")]
+    [ReadOnly(true)]
+#endif
+    public string JavDbMetadataLastRun => FormatJavDbMetadataLastRun(GetJavDbMetadataSummary().LastRunAtUtc);
+
+    private bool _clearJavDbMetadataRecords;
+
+#if __EMBY__
+    [DisplayName("清空 JAVDB 状态记录")]
+    [Description("勾选并保存设置后，删除全部成功和失败记录；下一次补全任务会重新执行全量更新。")]
+#endif
+    public bool ClearJavDbMetadataRecords
+    {
+        get => _clearJavDbMetadataRecords;
+        set
+        {
+            if (value)
+            {
+                JavDbMetadataStateStore.Clear(Plugin.Instance?.JavDbMetadataStatePath);
+                JavDbMetadataSuccessRecords = string.Empty;
+                JavDbMetadataFailureRecords = string.Empty;
+                JavDbMetadataRecordsInitialized = true;
+            }
+
+            _clearJavDbMetadataRecords = false;
+        }
+    }
+
+#if __EMBY__
+    [Browsable(false)]
 #endif
     public string JavDbMetadataSuccessRecords { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("JAVDB 失败记录")]
-    [Description(
-        "每行一条失败记录，最多保留 10000 条。补全任务会自动重试这里仍存在的项目；可从表单中删除单条记录，或清空全部记录。")]
-    [EditMultiline(12)]
+    [Browsable(false)]
 #endif
     public string JavDbMetadataFailureRecords { get; set; } = string.Empty;
 
@@ -103,6 +142,24 @@ public class PluginConfiguration : BasePluginConfiguration
     [Browsable(false)]
 #endif
     public bool JavDbMetadataRecordsInitialized { get; set; } = false;
+
+    private JavDbMetadataSummary GetJavDbMetadataSummary()
+    {
+        return JavDbMetadataStateStore.GetSummary(
+            Plugin.Instance?.JavDbMetadataStatePath,
+            () => new JavDbMetadataState
+            {
+                Successes = JavDbMetadataStateStore.ParseLegacyRecords(JavDbMetadataSuccessRecords),
+                Failures = JavDbMetadataStateStore.ParseLegacyRecords(JavDbMetadataFailureRecords)
+            });
+    }
+
+    private static string FormatJavDbMetadataLastRun(DateTimeOffset lastRunAtUtc)
+    {
+        return lastRunAtUtc == default
+            ? "尚未运行"
+            : lastRunAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    }
 
 #if __EMBY__
     [DisplayName("给封面使用角标")]

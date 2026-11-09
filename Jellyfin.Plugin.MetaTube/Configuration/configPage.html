@@ -164,15 +164,26 @@
                     <h2 class="sectionTitle">JAVDB 元数据任务</h2>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtJavDbMetadataSuccessRecords">JAVDB 成功记录：</label>
-                        <textarea class="emby-input" id="txtJavDbMetadataSuccessRecords" is="emby-input" name="txtJavDbMetadataSuccessRecords" rows="12"></textarea>
-                        <div class="fieldDescription">每行一条成功记录，最多保留 10000 条。格式为：番号、名称、项目 ID、更新时间、说明，字段之间使用 Tab 分隔。补全任务始终扫描全部影片，并跳过这里的成功项目；成功记录为空或较少时接近全量更新。</div>
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataSuccessCount">0</div>
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtJavDbMetadataFailureRecords">JAVDB 失败记录：</label>
-                        <textarea class="emby-input" id="txtJavDbMetadataFailureRecords" is="emby-input" name="txtJavDbMetadataFailureRecords" rows="12"></textarea>
-                        <div class="fieldDescription">每行一条失败记录，最多保留 10000 条。补全任务会自动重试这里仍存在的项目；可从表单中删除单条记录，或清空全部记录。</div>
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 失败记录：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataFailureCount">0</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 上次运行：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataLastRun">尚未运行</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkClearJavDbMetadataRecords" is="emby-checkbox" name="chkClearJavDbMetadataRecords" type="checkbox"/>
+                            <span>清空 JAVDB 状态记录</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">勾选并保存设置后，删除全部成功和失败记录；下一次补全任务会重新执行全量更新。</div>
                     </div>
                 </div>
 
@@ -627,8 +638,10 @@
                 page.querySelector('#chkEnableTrailers').checked = config.EnableTrailers;
                 page.querySelector('#chkEnableRealActorNames').checked = config.EnableRealActorNames;
                 page.querySelector('#chkEnableGenreAndTagScraping').checked = config.EnableGenreAndTagScraping;
-                $('#txtJavDbMetadataSuccessRecords', page).val(config.JavDbMetadataSuccessRecords).change();
-                $('#txtJavDbMetadataFailureRecords', page).val(config.JavDbMetadataFailureRecords).change();
+                $('#txtJavDbMetadataSuccessCount', page).text(config.JavDbMetadataSuccessCount);
+                $('#txtJavDbMetadataFailureCount', page).text(config.JavDbMetadataFailureCount);
+                $('#txtJavDbMetadataLastRun', page).text(config.JavDbMetadataLastRun);
+                page.querySelector('#chkClearJavDbMetadataRecords').checked = false;
                 page.querySelector('#chkEnableBadges').checked = config.EnableBadges;
                 $('#txtBadgeUrl', page).val(config.BadgeUrl).change();
                 $('#txtPrimaryImageRatio', page).val(config.PrimaryImageRatio).change();
@@ -677,8 +690,8 @@
                 config.EnableTrailers = $('#chkEnableTrailers', form).prop('checked');
                 config.EnableRealActorNames = $('#chkEnableRealActorNames', form).prop('checked');
                 config.EnableGenreAndTagScraping = $('#chkEnableGenreAndTagScraping', form).prop('checked');
-                config.JavDbMetadataSuccessRecords = $('#txtJavDbMetadataSuccessRecords', form).val();
-                config.JavDbMetadataFailureRecords = $('#txtJavDbMetadataFailureRecords', form).val();
+                config.ClearJavDbMetadataRecords =
+                    $('#chkClearJavDbMetadataRecords', form).prop('checked');
                 config.EnableBadges = $('#chkEnableBadges', form).prop('checked');
                 config.BadgeUrl = $('#txtBadgeUrl', form).val();
                 config.PrimaryImageRatio = $('#txtPrimaryImageRatio', form).val();

@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.MetaTube.Extensions;
 using MediaBrowser.Common.Configuration;
@@ -22,17 +19,10 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 public abstract class JavDbMetadataTaskBase : IScheduledTask
 {
     private const string JavDbProvider = "JavDB";
-    private const string StateFileName = "javdb-metadata-incremental-state.json";
-    private const int MaxRecordsPerTable = 10000;
+    private const int StateSaveBatchSize = 25;
     private static readonly TimeSpan JavDbRequestInterval = TimeSpan.FromSeconds(10);
     private static readonly SemaphoreSlim JavDbRequestGate = new(1, 1);
-    private static readonly SemaphoreSlim StateFileLock = new(1, 1);
     private static DateTimeOffset _lastJavDbRequestUtc = DateTimeOffset.MinValue;
-    private static readonly JsonSerializerOptions StateJsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
     private static readonly Regex Fc2NumberPattern = new(
         @"(?i)(?<![A-Z0-9])FC2(?:[-_\s]?PPV)?[-_\s]?(?<number>\d{5,})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -56,7 +46,8 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     {
         _logger = logManager.CreateLogger<JavDbMetadataTaskBase>();
         _libraryManager = libraryManager;
-        _stateFilePath = Path.Combine(applicationPaths.PluginConfigurationsPath, StateFileName);
+        _stateFilePath = Path.Combine(applicationPaths.PluginConfigurationsPath,
+            JavDbMetadataStateStore.StateFileName);
     }
 #else
     protected JavDbMetadataTaskBase(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager,
@@ -64,7 +55,8 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     {
         _logger = logger;
         _libraryManager = libraryManager;
-        _stateFilePath = Path.Combine(applicationPaths.PluginConfigurationsPath, StateFileName);
+        _stateFilePath = Path.Combine(applicationPaths.PluginConfigurationsPath,
+            JavDbMetadataStateStore.StateFileName);
     }
 #endif
 
@@ -137,54 +129,70 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
         var updated = 0;
         var failed = 0;
-        for (var index = 0; index < itemList.Count; index++)
+        var pendingStateWrites = 0;
+        state.LastRunAtUtc = DateTimeOffset.UtcNow;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var item = itemList[index];
-            progress?.Report(itemList.Count == 0 ? 100 : (double)index / itemList.Count * 100);
-
-            var keyword = GetJavDbKeyword(item);
-            if (string.IsNullOrWhiteSpace(keyword))
-                continue;
-
-            try
+            for (var index = 0; index < itemList.Count; index++)
             {
-                await ReplaceMetadataAsync(
-                        item, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), cancellationToken)
-                    .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                var item = itemList[index];
+                progress?.Report(itemList.Count == 0 ? 100 : (double)index / itemList.Count * 100);
 
-                await WaitForJavDbRequestSlotAsync(cancellationToken).ConfigureAwait(false);
-                var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
-                    .ConfigureAwait(false);
-                var genres = BuildGenres(info.Genres);
-                var tags = BuildTags(info.Series);
-                var studios = BuildStudios(info.Maker, info.Label);
+                var keyword = GetJavDbKeyword(item);
+                if (string.IsNullOrWhiteSpace(keyword))
+                    continue;
 
-                if (!HasSameValues(item.Genres, genres) ||
-                    !HasSameValues(item.Tags, tags) ||
-                    !HasSameValues(item.Studios, studios))
+                try
                 {
-                    _logger.Info("Update JAVDB genres, tags and studios for video: {0}", item.Name);
-                    await ReplaceMetadataAsync(item, genres, tags, studios, cancellationToken)
+                    await ReplaceMetadataAsync(
+                            item, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
+                            cancellationToken)
                         .ConfigureAwait(false);
-                    updated++;
+
+                    await WaitForJavDbRequestSlotAsync(cancellationToken).ConfigureAwait(false);
+                    var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
+                        .ConfigureAwait(false);
+                    var genres = BuildGenres(info.Genres);
+                    var tags = BuildTags(info.Series);
+                    var studios = BuildStudios(info.Maker, info.Label);
+
+                    if (!HasSameValues(item.Genres, genres) ||
+                        !HasSameValues(item.Tags, tags) ||
+                        !HasSameValues(item.Studios, studios))
+                    {
+                        _logger.Info("Update JAVDB genres, tags and studios for video: {0}", item.Name);
+                        await ReplaceMetadataAsync(item, genres, tags, studios, cancellationToken)
+                            .ConfigureAwait(false);
+                        updated++;
+                    }
+
+                    RecordOutcome(state, item, keyword, true, string.Empty);
+                    pendingStateWrites++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    failed++;
+                    _logger.Error("Update JAVDB genres, tags and studios for video {0} failed: {1}",
+                        item.Name, exception.Message);
+                    RecordOutcome(state, item, keyword, false, exception.Message);
+                    pendingStateWrites++;
                 }
 
-                await TryRecordOutcomeAsync(item, keyword, true, string.Empty, cancellationToken)
-                    .ConfigureAwait(false);
+                if (pendingStateWrites >= StateSaveBatchSize)
+                {
+                    if (await TrySaveStateAsync(state, cancellationToken).ConfigureAwait(false))
+                        pendingStateWrites = 0;
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                failed++;
-                _logger.Error("Update JAVDB genres, tags and studios for video {0} failed: {1}",
-                    item.Name, exception.Message);
-                await TryRecordOutcomeAsync(item, keyword, false, exception.Message, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+        }
+        finally
+        {
+            await TrySaveStateAsync(state, CancellationToken.None).ConfigureAwait(false);
         }
 
         _logger.Info("JAVDB metadata task completed: updated={0}, failed={1}, state={2}",
@@ -212,195 +220,76 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
     }
 
-    private async Task TryRecordOutcomeAsync(BaseItem item, string keyword, bool success, string message,
-        CancellationToken cancellationToken)
+    private async Task<bool> TrySaveStateAsync(JavDbMetadataState state, CancellationToken cancellationToken)
     {
         try
         {
-            await RecordOutcomeAsync(item, keyword, success, message, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
+            await JavDbMetadataStateStore.SaveAsync(_stateFilePath, state, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
         }
         catch (Exception exception)
         {
             _logger.Error("Write JAVDB metadata task state failed: {0}", exception.Message);
+            return false;
         }
     }
 
-    private async Task RecordOutcomeAsync(BaseItem item, string keyword, bool success, string message,
-        CancellationToken cancellationToken)
+    private static void RecordOutcome(
+        JavDbMetadataState state,
+        BaseItem item,
+        string keyword,
+        bool success,
+        string message)
     {
-        await StateFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var state = await ReadStateFileAsync(cancellationToken).ConfigureAwait(false);
-            var now = DateTimeOffset.UtcNow;
-            state.LastRunAtUtc = now;
-            RemoveSameItem(state.Successes, item, keyword);
-            RemoveSameItem(state.Failures, item, keyword);
+        var now = DateTimeOffset.UtcNow;
+        state.LastRunAtUtc = now;
+        state.Successes.RemoveAll(record => IsSameItem(record, item, keyword));
+        state.Failures.RemoveAll(record => IsSameItem(record, item, keyword));
 
-            var record = new JavDbMetadataRecord
-            {
-                ItemId = item.Id.ToString("N"),
-                Name = item.Name,
-                Keyword = keyword,
-                Message = success ? string.Empty : message ?? string.Empty,
-                UpdatedAtUtc = now
-            };
-            if (success)
-                state.Successes.Add(record);
-            else
-                state.Failures.Add(record);
-
-            NormalizeState(state);
-            await WriteStateFileAsync(state, cancellationToken).ConfigureAwait(false);
-            await SaveStateToConfigurationAsync(state, cancellationToken).ConfigureAwait(false);
-        }
-        finally
+        var record = new JavDbMetadataRecord
         {
-            StateFileLock.Release();
-        }
+            ItemId = item.Id.ToString("N"),
+            Name = item.Name,
+            Keyword = keyword,
+            Message = success ? string.Empty : message ?? string.Empty,
+            UpdatedAtUtc = now
+        };
+        if (success)
+            state.Successes.Add(record);
+        else
+            state.Failures.Add(record);
     }
 
     private async Task<JavDbMetadataState> LoadStateAsync(CancellationToken cancellationToken)
     {
-        await StateFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var configuration = Plugin.Instance.Configuration;
-            var fileState = await ReadStateFileAsync(cancellationToken).ConfigureAwait(false);
-            var configurationState = ReadConfigurationState(configuration);
-            var hasConfigurationRecords = configurationState.Successes.Count > 0 ||
-                                          configurationState.Failures.Count > 0;
-            var state = configuration.JavDbMetadataRecordsInitialized
-                ? hasConfigurationRecords
-                    ? configurationState
-                    : new JavDbMetadataState()
-                : hasConfigurationRecords
-                    ? configurationState
-                    : fileState;
+        var configuration = Plugin.Instance.Configuration;
+        var state = await JavDbMetadataStateStore.LoadAsync(
+                _stateFilePath,
+                () => ReadConfigurationState(configuration),
+                cancellationToken)
+            .ConfigureAwait(false);
 
-            // The first run after upgrading imports the old failure-only state file.
-            configuration.JavDbMetadataRecordsInitialized = true;
-            NormalizeState(state);
-            await WriteStateFileAsync(state, cancellationToken).ConfigureAwait(false);
-            await SaveStateToConfigurationAsync(state, cancellationToken).ConfigureAwait(false);
-            return state;
-        }
-        finally
+        if (!string.IsNullOrWhiteSpace(configuration.JavDbMetadataSuccessRecords) ||
+            !string.IsNullOrWhiteSpace(configuration.JavDbMetadataFailureRecords) ||
+            !configuration.JavDbMetadataRecordsInitialized)
         {
-            StateFileLock.Release();
+            configuration.JavDbMetadataSuccessRecords = string.Empty;
+            configuration.JavDbMetadataFailureRecords = string.Empty;
+            configuration.JavDbMetadataRecordsInitialized = true;
+            Plugin.Instance.SaveConfiguration(configuration);
         }
+
+        return state;
     }
 
     private static JavDbMetadataState ReadConfigurationState(Configuration.PluginConfiguration configuration)
     {
         return new JavDbMetadataState
         {
-            Successes = ParseRecords(configuration.JavDbMetadataSuccessRecords),
-            Failures = ParseRecords(configuration.JavDbMetadataFailureRecords)
+            Successes = JavDbMetadataStateStore.ParseLegacyRecords(configuration.JavDbMetadataSuccessRecords),
+            Failures = JavDbMetadataStateStore.ParseLegacyRecords(configuration.JavDbMetadataFailureRecords)
         };
-    }
-
-    private async Task SaveStateToConfigurationAsync(JavDbMetadataState state, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var configuration = Plugin.Instance.Configuration;
-        configuration.JavDbMetadataSuccessRecords = SerializeRecords(state.Successes);
-        configuration.JavDbMetadataFailureRecords = SerializeRecords(state.Failures);
-        configuration.JavDbMetadataRecordsInitialized = true;
-        Plugin.Instance.SaveConfiguration(configuration);
-        await Task.CompletedTask.ConfigureAwait(false);
-    }
-
-    private async Task WriteStateFileAsync(JavDbMetadataState state, CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_stateFilePath) ?? ".");
-        var temporaryPath = $"{_stateFilePath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            var json = JsonSerializer.Serialize(state, StateJsonOptions);
-            await File.WriteAllTextAsync(temporaryPath, json, Encoding.UTF8, cancellationToken)
-                .ConfigureAwait(false);
-            File.Move(temporaryPath, _stateFilePath, true);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-                File.Delete(temporaryPath);
-        }
-    }
-
-    private async Task<JavDbMetadataState> ReadStateFileAsync(CancellationToken cancellationToken)
-    {
-        if (!File.Exists(_stateFilePath))
-            return new JavDbMetadataState();
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(_stateFilePath, cancellationToken).ConfigureAwait(false);
-            var state = JsonSerializer.Deserialize<JavDbMetadataState>(json, StateJsonOptions)
-                        ?? new JavDbMetadataState();
-            if (state.Successes.Count == 0 && state.Failures.Count == 0 &&
-                json.Contains("\"items\"", StringComparison.OrdinalIgnoreCase))
-            {
-                var legacy = JsonSerializer.Deserialize<LegacyJavDbIncrementalState>(json, StateJsonOptions);
-                foreach (var item in legacy?.Items ?? Enumerable.Empty<JavDbIncrementalItemState>())
-                {
-                    if (!string.Equals(item.Status, "failed", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    state.Failures.Add(new JavDbMetadataRecord
-                    {
-                        ItemId = item.ItemId,
-                        Name = item.Name,
-                        Keyword = item.Keyword,
-                        Message = item.Message,
-                        UpdatedAtUtc = item.UpdatedAtUtc
-                    });
-                }
-            }
-
-            return state;
-        }
-        catch (JsonException exception)
-        {
-            _logger.Warn("JAVDB metadata task state file is invalid, starting a new one: {0}",
-                exception.Message);
-            return new JavDbMetadataState();
-        }
-    }
-
-    private static void NormalizeState(JavDbMetadataState state)
-    {
-        state.Successes = NormalizeRecords(state.Successes);
-        state.Failures = NormalizeRecords(state.Failures);
-
-        var failedKeys = state.Failures
-            .Select(GetRecordKey)
-            .Where(key => !string.IsNullOrWhiteSpace(key))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        state.Successes = state.Successes
-            .Where(record => !failedKeys.Contains(GetRecordKey(record)))
-            .ToList();
-    }
-
-    private static List<JavDbMetadataRecord> NormalizeRecords(IEnumerable<JavDbMetadataRecord> records)
-    {
-        return (records ?? Enumerable.Empty<JavDbMetadataRecord>())
-            .Where(record => record != null && !string.IsNullOrWhiteSpace(GetRecordKey(record)))
-            .GroupBy(GetRecordKey, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(record => record.UpdatedAtUtc).First())
-            .OrderByDescending(record => record.UpdatedAtUtc)
-            .Take(MaxRecordsPerTable)
-            .ToList();
-    }
-
-    private static void RemoveSameItem(List<JavDbMetadataRecord> records, BaseItem item, string keyword)
-    {
-        records.RemoveAll(record => IsSameItem(record, item, keyword));
     }
 
     private static bool IsSameItem(JavDbMetadataRecord record, BaseItem item, string keyword)
@@ -411,64 +300,10 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return string.Equals(record.Keyword, keyword, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetRecordKey(JavDbMetadataRecord record)
-    {
-        if (record == null)
-            return string.Empty;
-
-        return !string.IsNullOrWhiteSpace(record.ItemId)
-            ? record.ItemId.Trim()
-            : record.Keyword?.Trim() ?? string.Empty;
-    }
-
-    private static string SerializeRecords(IEnumerable<JavDbMetadataRecord> records)
-    {
-        return string.Join('\n', (records ?? Enumerable.Empty<JavDbMetadataRecord>())
-            .Select(record => string.Join('\t',
-                SanitizeRecordField(record.Keyword),
-                SanitizeRecordField(record.Name),
-                SanitizeRecordField(record.ItemId),
-                record.UpdatedAtUtc.ToString("O", CultureInfo.InvariantCulture),
-                SanitizeRecordField(record.Message))));
-    }
-
-    private static List<JavDbMetadataRecord> ParseRecords(string value)
-    {
-        var records = new List<JavDbMetadataRecord>();
-        foreach (var rawLine in (value ?? string.Empty).Split('\n'))
-        {
-            var fields = rawLine.TrimEnd('\r').Split('\t');
-            if (fields.Length < 4 || string.IsNullOrWhiteSpace(fields[0]))
-                continue;
-
-            if (!DateTimeOffset.TryParse(fields[3], CultureInfo.InvariantCulture,
-                    DateTimeStyles.RoundtripKind, out var updatedAt))
-                updatedAt = DateTimeOffset.MinValue;
-
-            records.Add(new JavDbMetadataRecord
-            {
-                Keyword = fields[0].Trim(),
-                Name = fields[1].Trim(),
-                ItemId = fields[2].Trim(),
-                UpdatedAtUtc = updatedAt,
-                Message = fields.Length > 4 ? fields[4].Trim() : string.Empty
-            });
-        }
-
-        return NormalizeRecords(records);
-    }
-
-    private static string SanitizeRecordField(string value)
-    {
-        return (value ?? string.Empty)
-            .Replace('\t', ' ')
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .Trim();
-    }
-
     internal static string GetJavDbKeyword(BaseItem item)
     {
+        // Only JAVDB ids are valid movie numbers. Sources such as DMM/FANZA use padded ids
+        // (e.g. ipz00377) that do not map directly to the real number (IPZ-377).
         var pid = item.GetPid(Plugin.ProviderId);
         if (pid.Provider.Equals(JavDbProvider, StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(pid.Id))
@@ -476,10 +311,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             return pid.Id;
         }
 
-        if (LooksLikeMovieNumber(pid.Id))
-            return NormalizeMovieNumber(pid.Id);
-
-        foreach (var value in new[] { item.Name, item.OriginalTitle, item.FileNameWithoutExtension })
+        foreach (var value in new[] { item.FileNameWithoutExtension, item.Name, item.OriginalTitle })
         {
             var keyword = ExtractMovieNumber(value);
             if (!string.IsNullOrWhiteSpace(keyword))
@@ -487,6 +319,13 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         return string.Empty;
+    }
+
+    private static string TrimNumberPadding(string number)
+    {
+        // IPZ-00377 -> IPZ-377; keep at least 3 digits.
+        var trimmed = number.TrimStart('0');
+        return trimmed.Length >= 3 ? trimmed : trimmed.PadLeft(3, '0');
     }
 
     internal static string ExtractMovieNumber(string value)
@@ -507,36 +346,23 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             var prefix = separatedMatch.Groups["prefix"].Value.ToUpperInvariant();
             var number = separatedMatch.Groups["number"].Value;
             if (!prefix.All(char.IsDigit) || (prefix.Length == 6 && number.Length == 3))
+            {
+                if (!prefix.All(char.IsDigit) && number.Length > 3)
+                    number = TrimNumberPadding(number);
                 return $"{prefix}-{number}";
+            }
         }
 
         var compactMatch = CompactNumberPattern.Match(value);
         if (compactMatch.Success)
         {
-            return $"{compactMatch.Groups["prefix"].Value.ToUpperInvariant()}-" +
-                   compactMatch.Groups["number"].Value;
+            var compactNumber = compactMatch.Groups["number"].Value;
+            if (compactNumber.Length > 3)
+                compactNumber = TrimNumberPadding(compactNumber);
+            return $"{compactMatch.Groups["prefix"].Value.ToUpperInvariant()}-{compactNumber}";
         }
 
         return string.Empty;
-    }
-
-    private static bool LooksLikeMovieNumber(string value)
-    {
-        return !string.IsNullOrWhiteSpace(value) &&
-               NormalizeMovieNumber(value) != string.Empty;
-    }
-
-    private static string NormalizeMovieNumber(string value)
-    {
-        var keyword = ExtractMovieNumber(value);
-        if (!string.IsNullOrWhiteSpace(keyword))
-            return keyword;
-
-        var compact = value.Trim().Replace('_', '-').ToUpperInvariant();
-        return Regex.IsMatch(compact, @"^[A-Z0-9]{2,12}-\d{2,6}$",
-            RegexOptions.CultureInvariant)
-            ? compact
-            : string.Empty;
     }
 
     private async Task ReplaceMetadataAsync(
@@ -587,7 +413,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return (current ?? Enumerable.Empty<string>())
             .SequenceEqual(expected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
-
 }
 
 public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
@@ -634,46 +459,4 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
             TimeOfDayTicks = TimeSpan.FromHours(4).Ticks
         };
     }
-}
-
-public sealed class JavDbMetadataState
-{
-    public DateTimeOffset LastRunAtUtc { get; set; }
-
-    public List<JavDbMetadataRecord> Successes { get; set; } = new();
-
-    public List<JavDbMetadataRecord> Failures { get; set; } = new();
-}
-
-public sealed class JavDbMetadataRecord
-{
-    public string ItemId { get; set; } = string.Empty;
-
-    public string Name { get; set; } = string.Empty;
-
-    public string Keyword { get; set; } = string.Empty;
-
-    public string Message { get; set; } = string.Empty;
-
-    public DateTimeOffset UpdatedAtUtc { get; set; }
-}
-
-internal sealed class LegacyJavDbIncrementalState
-{
-    public List<JavDbIncrementalItemState> Items { get; set; } = new();
-}
-
-internal sealed class JavDbIncrementalItemState
-{
-    public string ItemId { get; set; } = string.Empty;
-
-    public string Name { get; set; } = string.Empty;
-
-    public string Keyword { get; set; } = string.Empty;
-
-    public string Status { get; set; } = string.Empty;
-
-    public string Message { get; set; } = string.Empty;
-
-    public DateTimeOffset UpdatedAtUtc { get; set; }
 }

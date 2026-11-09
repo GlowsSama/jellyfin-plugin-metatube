@@ -2,6 +2,7 @@ using Jellyfin.Plugin.MetaTube.Configuration;
 using MediaBrowser.Common.Plugins;
 #if __EMBY__
 using MediaBrowser.Common;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Drawing;
 
@@ -19,6 +20,9 @@ public class Plugin : BasePluginSimpleUI<PluginConfiguration>, IHasThumbImage
     public Plugin(IApplicationHost applicationHost) : base(applicationHost)
     {
         Instance = this;
+        JavDbMetadataStatePath = Path.Combine(
+            applicationHost.Resolve<IApplicationPaths>().PluginConfigurationsPath,
+            ScheduledTasks.JavDbMetadataStateStore.StateFileName);
     }
 #else
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
@@ -27,6 +31,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         xmlSerializer)
     {
         Instance = this;
+        JavDbMetadataStatePath = Path.Combine(
+            applicationPaths.PluginConfigurationsPath,
+            ScheduledTasks.JavDbMetadataStateStore.StateFileName);
     }
 #endif
 
@@ -46,6 +53,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => Guid.Parse("01cc53ec-c415-4108-bbd4-a684a9801a32");
 
     public static Plugin Instance { get; private set; }
+
+    public string JavDbMetadataStatePath { get; }
 
 #if !__EMBY__
     public IEnumerable<PluginPageInfo> GetPages()
