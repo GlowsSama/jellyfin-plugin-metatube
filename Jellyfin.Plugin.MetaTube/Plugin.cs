@@ -59,10 +59,20 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             }
         };
     }
+
+    public void SaveConfiguration(PluginConfiguration configuration)
+    {
+        UpdateConfiguration(configuration);
+    }
 #endif
 
 #if __EMBY__
     public PluginConfiguration Configuration => GetOptions();
+
+    public void SaveConfiguration(PluginConfiguration configuration)
+    {
+        SaveOptions(configuration);
+    }
 
     public Stream GetThumbImage()
     {

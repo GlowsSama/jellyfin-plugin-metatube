@@ -161,6 +161,22 @@
                 </div>
 
                 <div class="verticalSection">
+                    <h2 class="sectionTitle">JAVDB 元数据任务</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtJavDbMetadataSuccessRecords">JAVDB 成功记录：</label>
+                        <textarea class="emby-input" id="txtJavDbMetadataSuccessRecords" is="emby-input" name="txtJavDbMetadataSuccessRecords" rows="12"></textarea>
+                        <div class="fieldDescription">每行一条成功记录，最多保留 10000 条。格式为：番号、名称、项目 ID、更新时间、说明，字段之间使用 Tab 分隔。清空成功和失败记录后，下次补全任务将执行全量更新。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtJavDbMetadataFailureRecords">JAVDB 失败记录：</label>
+                        <textarea class="emby-input" id="txtJavDbMetadataFailureRecords" is="emby-input" name="txtJavDbMetadataFailureRecords" rows="12"></textarea>
+                        <div class="fieldDescription">每行一条失败记录，最多保留 10000 条。增量补全任务会自动重试这里仍存在的项目；可从表单中删除单条记录，或清空全部记录。</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
                     <h2 class="sectionTitle">Badge</h2>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -611,6 +627,8 @@
                 page.querySelector('#chkEnableTrailers').checked = config.EnableTrailers;
                 page.querySelector('#chkEnableRealActorNames').checked = config.EnableRealActorNames;
                 page.querySelector('#chkEnableGenreAndTagScraping').checked = config.EnableGenreAndTagScraping;
+                $('#txtJavDbMetadataSuccessRecords', page).val(config.JavDbMetadataSuccessRecords).change();
+                $('#txtJavDbMetadataFailureRecords', page).val(config.JavDbMetadataFailureRecords).change();
                 page.querySelector('#chkEnableBadges').checked = config.EnableBadges;
                 $('#txtBadgeUrl', page).val(config.BadgeUrl).change();
                 $('#txtPrimaryImageRatio', page).val(config.PrimaryImageRatio).change();
@@ -659,6 +677,8 @@
                 config.EnableTrailers = $('#chkEnableTrailers', form).prop('checked');
                 config.EnableRealActorNames = $('#chkEnableRealActorNames', form).prop('checked');
                 config.EnableGenreAndTagScraping = $('#chkEnableGenreAndTagScraping', form).prop('checked');
+                config.JavDbMetadataSuccessRecords = $('#txtJavDbMetadataSuccessRecords', form).val();
+                config.JavDbMetadataFailureRecords = $('#txtJavDbMetadataFailureRecords', form).val();
                 config.EnableBadges = $('#chkEnableBadges', form).prop('checked');
                 config.BadgeUrl = $('#txtBadgeUrl', form).val();
                 config.PrimaryImageRatio = $('#txtPrimaryImageRatio', form).val();
