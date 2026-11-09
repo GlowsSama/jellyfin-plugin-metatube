@@ -159,23 +159,21 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             Logger.Info("Add Collection for movie {0} [{1}]", pid.ToString(), m.Series);
         }
 
-        // Add studio.
-        if (!string.IsNullOrWhiteSpace(m.Maker))
-            result.Item.AddStudio(m.Maker);
-
         if (Configuration.EnableGenreAndTagScraping)
         {
-            // Add tag (series).
+            // Genres are populated from the provider's tag/category list.
+
+            // Add tag (series only).
             if (!string.IsNullOrWhiteSpace(m.Series))
                 result.Item.AddTag(m.Series);
 
-            // Add tag (maker).
+            // Add studios (maker and label).
             if (!string.IsNullOrWhiteSpace(m.Maker))
-                result.Item.AddTag(m.Maker);
+                result.Item.AddStudio(m.Maker);
 
-            // Add tag (label).
-            if (!string.IsNullOrWhiteSpace(m.Label))
-                result.Item.AddTag(m.Label);
+            if (!string.IsNullOrWhiteSpace(m.Label) &&
+                !string.Equals(m.Maker?.Trim(), m.Label.Trim(), StringComparison.OrdinalIgnoreCase))
+                result.Item.AddStudio(m.Label);
         }
 
         // Add director.
