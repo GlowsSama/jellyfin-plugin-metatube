@@ -69,8 +69,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     }
 #endif
 
-    protected virtual bool ClearOnly => false;
-
     public abstract string Key { get; }
 
     public abstract string Name { get; }
@@ -101,7 +99,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }).ToList();
 
         var state = await LoadStateAsync(cancellationToken).ConfigureAwait(false);
-        if (!ClearOnly && (state.Successes.Count > 0 || state.Failures.Count > 0))
+        if (state.Successes.Count > 0 || state.Failures.Count > 0)
         {
             var cutoff = DateTimeOffset.UtcNow.Subtract(IncrementalLookback);
             var failedItemIds = state.Failures
@@ -143,13 +141,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             .Select(group => group.First())
             .ToList();
         progress?.Report(0);
-
-        if (ClearOnly)
-        {
-            await ClearMetadataAsync(itemList, progress, cancellationToken).ConfigureAwait(false);
-            await ResetStateAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
 
         var updated = 0;
         var failed = 0;
@@ -228,33 +219,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
     }
 
-    private async Task ClearMetadataAsync(IReadOnlyList<BaseItem> items, IProgress<double> progress,
-        CancellationToken cancellationToken)
-    {
-        var cleared = 0;
-        for (var index = 0; index < items.Count; index++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(items.Count == 0 ? 100 : (double)index / items.Count * 100);
-
-            var item = items[index];
-            if ((item.Genres?.Length ?? 0) == 0 &&
-                (item.Tags?.Length ?? 0) == 0 &&
-                (item.Studios?.Length ?? 0) == 0)
-            {
-                continue;
-            }
-
-            await ReplaceMetadataAsync(
-                    item, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), cancellationToken)
-                .ConfigureAwait(false);
-            cleared++;
-        }
-
-        _logger.Info("JAVDB metadata clear task completed: cleared={0}", cleared);
-        progress?.Report(100);
-    }
-
     private async Task TryRecordOutcomeAsync(BaseItem item, string keyword, bool success, string message,
         CancellationToken cancellationToken)
     {
@@ -298,24 +262,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 state.Failures.Add(record);
 
             NormalizeState(state);
-            await WriteStateFileAsync(state, cancellationToken).ConfigureAwait(false);
-            await SaveStateToConfigurationAsync(state, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            StateFileLock.Release();
-        }
-    }
-
-    private async Task ResetStateAsync(CancellationToken cancellationToken)
-    {
-        await StateFileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var state = new JavDbMetadataState
-            {
-                LastRunAtUtc = DateTimeOffset.UtcNow
-            };
             await WriteStateFileAsync(state, cancellationToken).ConfigureAwait(false);
             await SaveStateToConfigurationAsync(state, cancellationToken).ConfigureAwait(false);
         }
@@ -675,9 +621,9 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "JAVDB 补全流派/标签/工作室数据 (beta)";
+        "补全流派/标签/工作室数据";
 #else
-        "JAVDB Complete Genres, Tags and Studios (beta)";
+        "Complete Genres, Tags and Studios";
 #endif
 
     public override string Description =>
@@ -698,46 +644,6 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 #endif
             TimeOfDayTicks = TimeSpan.FromHours(4).Ticks
         };
-    }
-}
-
-public sealed class JavDbMetadataClearTask : JavDbMetadataTaskBase
-{
-#if __EMBY__
-    public JavDbMetadataClearTask(ILogManager logManager, ILibraryManager libraryManager,
-        IApplicationPaths applicationPaths)
-        : base(logManager, libraryManager, applicationPaths)
-    {
-    }
-#else
-    public JavDbMetadataClearTask(ILogger<JavDbMetadataTaskBase> logger, ILibraryManager libraryManager,
-        IApplicationPaths applicationPaths)
-        : base(logger, libraryManager, applicationPaths)
-    {
-    }
-#endif
-
-    protected override bool ClearOnly => true;
-
-    public override string Key => $"{Plugin.ProviderName}JavDbMetadataClear";
-
-    public override string Name =>
-#if __EMBY__
-        "JAVDB 清空流派/标签/工作室数据 (beta)";
-#else
-        "JAVDB Clear Genres, Tags and Studios (beta)";
-#endif
-
-    public override string Description =>
-#if __EMBY__
-        "一键删除全部影片的流派、标签和工作室，并清空 JAVDB 成功/失败记录。下次补全任务将执行全量更新。";
-#else
-        "Deletes genres, tags and studios from all movies and clears the JAVDB success/failure tables. The next completion task will run in full mode.";
-#endif
-
-    public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
-    {
-        return Enumerable.Empty<TaskTriggerInfo>();
     }
 }
 
