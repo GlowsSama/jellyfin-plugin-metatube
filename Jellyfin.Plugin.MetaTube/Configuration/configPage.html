@@ -156,12 +156,46 @@
                             <input id="chkEnableGenreAndTagScraping" is="emby-checkbox" name="chkEnableGenreAndTagScraping" type="checkbox"/>
                             <span>从来源刮削流派、标签和工作室数据</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启后，普通刮削会将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室。不同站点的数据往往较混乱，语言和格式难以统一，建议关闭，并定期运行“从JAVDB替换流派/标签/工作室数据”统一整理。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，普通刮削会将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室。不同站点的数据往往较混乱，语言和格式难以统一，建议关闭，并定期运行“从JAVDB替换数据”统一整理。</div>
                     </div>
                 </div>
 
                 <div class="verticalSection">
                     <h2 class="sectionTitle">JAVDB 元数据任务</h2>
+
+                    <div class="fieldDescription">运行“从JAVDB替换数据”时，只替换以下已勾选的项目；未勾选的项目保持不变。</div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkReplaceJavDbGenres" is="emby-checkbox" name="chkReplaceJavDbGenres" type="checkbox"/>
+                            <span>流派(标签)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的标签替换影片流派。</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkReplaceJavDbTags" is="emby-checkbox" name="chkReplaceJavDbTags" type="checkbox"/>
+                            <span>标签(系列)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的系列替换影片标签。</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkReplaceJavDbStudios" is="emby-checkbox" name="chkReplaceJavDbStudios" type="checkbox"/>
+                            <span>工作室(厂牌,发行商)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的片商和发行商替换影片工作室。</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkReplaceJavDbActors" is="emby-checkbox" name="chkReplaceJavDbActors" type="checkbox"/>
+                            <span>演员名字</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的演员列表替换影片演员，同时保留导演等其他人员信息。</div>
+                    </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
@@ -183,15 +217,7 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。没有成功记录时执行全量替换；有成功记录时执行增量补全，只处理新影片和失败记录。任务会先清空现有流派、标签和工作室，再请求 JAVDB；请求或写入失败时会自动恢复原数据。</div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkClearJavDbMetadataRecords" is="emby-checkbox" name="chkClearJavDbMetadataRecords" type="checkbox"/>
-                            <span>清空 JAVDB 状态记录</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">勾选并保存设置后，删除全部成功和失败记录；下一次补全任务会重新执行全量更新。</div>
-                    </div>
+                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。没有成功记录或替换项目发生变化时执行全量替换；否则执行增量补全，只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB；请求或写入失败时会自动恢复原数据。</div>
                 </div>
 
                 <div class="verticalSection">
@@ -645,11 +671,14 @@
                 page.querySelector('#chkEnableTrailers').checked = config.EnableTrailers;
                 page.querySelector('#chkEnableRealActorNames').checked = config.EnableRealActorNames;
                 page.querySelector('#chkEnableGenreAndTagScraping').checked = config.EnableGenreAndTagScraping;
+                page.querySelector('#chkReplaceJavDbGenres').checked = config.ReplaceJavDbGenres;
+                page.querySelector('#chkReplaceJavDbTags').checked = config.ReplaceJavDbTags;
+                page.querySelector('#chkReplaceJavDbStudios').checked = config.ReplaceJavDbStudios;
+                page.querySelector('#chkReplaceJavDbActors').checked = config.ReplaceJavDbActors;
                 $('#txtJavDbMetadataSuccessCount', page).text(config.JavDbMetadataSuccessCount);
                 $('#txtJavDbMetadataFailureCount', page).text(config.JavDbMetadataFailureCount);
                 $('#txtJavDbMetadataLastRun', page).text(config.JavDbMetadataLastRun);
                 $('#txtJavDbMetadataLastMode', page).text(config.JavDbMetadataLastMode);
-                page.querySelector('#chkClearJavDbMetadataRecords').checked = false;
                 page.querySelector('#chkEnableBadges').checked = config.EnableBadges;
                 $('#txtBadgeUrl', page).val(config.BadgeUrl).change();
                 $('#txtPrimaryImageRatio', page).val(config.PrimaryImageRatio).change();
@@ -698,8 +727,10 @@
                 config.EnableTrailers = $('#chkEnableTrailers', form).prop('checked');
                 config.EnableRealActorNames = $('#chkEnableRealActorNames', form).prop('checked');
                 config.EnableGenreAndTagScraping = $('#chkEnableGenreAndTagScraping', form).prop('checked');
-                config.ClearJavDbMetadataRecords =
-                    $('#chkClearJavDbMetadataRecords', form).prop('checked');
+                config.ReplaceJavDbGenres = $('#chkReplaceJavDbGenres', form).prop('checked');
+                config.ReplaceJavDbTags = $('#chkReplaceJavDbTags', form).prop('checked');
+                config.ReplaceJavDbStudios = $('#chkReplaceJavDbStudios', form).prop('checked');
+                config.ReplaceJavDbActors = $('#chkReplaceJavDbActors', form).prop('checked');
                 config.EnableBadges = $('#chkEnableBadges', form).prop('checked');
                 config.BadgeUrl = $('#txtBadgeUrl', form).val();
                 config.PrimaryImageRatio = $('#txtPrimaryImageRatio', form).val();

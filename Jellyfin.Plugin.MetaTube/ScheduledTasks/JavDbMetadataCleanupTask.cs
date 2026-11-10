@@ -38,16 +38,16 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 
     public string Name =>
 #if __EMBY__
-        "清理流派标签工作室和JAVDB处理记录";
+        "删除流派/标签/工作室数据";
 #else
-        "Clear Genres, Tags, Studios and JAVDB Records";
+        "Delete Genres, Tags and Studios";
 #endif
 
     public string Description =>
 #if __EMBY__
-        "手动清理所有影片的流派、标签和工作室，并清空 JAVDB 成功与失败处理记录。JAVDB 处理记录清空后，下一次“从JAVDB替换流派/标签/工作室数据”会自动执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
+        "手动删除所有影片的流派、标签和工作室，同时清空 JAVDB 成功与失败处理记录。处理记录清空后，下一次“从JAVDB替换数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
 #else
-        "Manually clears genres, tags and studios from all movies and resets the JAVDB success and failure records. After the records are cleared, the next “Replace Genres, Tags and Studios from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
+        "Deletes genres, tags and studios from all movies and resets the JAVDB success and failure records. After the records are cleared, the next “Replace Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
 #endif
 
     public string Category => Plugin.ProviderName;
@@ -146,7 +146,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
         configuration.JavDbMetadataRecordsInitialized = true;
         Plugin.Instance.SaveConfiguration(configuration);
 
-        _logger.Info("JAVDB 处理记录已清空 | 下一次补全将执行全量替换");
+        _logger.Info("JAVDB 处理记录已清空 | 下一次“从JAVDB替换数据”将执行全量替换");
     }
 
     private async Task ApplyMetadataAsync(

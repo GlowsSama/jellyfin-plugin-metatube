@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 internal static class JavDbMetadataStateStore
 {
     public const string StateFileName = "javdb-metadata-incremental-state.json";
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
     private const int MaxRecordsPerTable = 10000;
     private static readonly SemaphoreSlim FileLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -169,8 +169,15 @@ internal static class JavDbMetadataStateStore
     {
         var state = JsonSerializer.Deserialize<JavDbMetadataState>(json, JsonOptions)
                     ?? new JavDbMetadataState();
+        var sourceSchemaVersion = state.SchemaVersion;
         state.Successes ??= new List<JavDbMetadataRecord>();
         state.Failures ??= new List<JavDbMetadataRecord>();
+        if (string.IsNullOrWhiteSpace(state.ReplacementFields) &&
+            sourceSchemaVersion < CurrentSchemaVersion)
+        {
+            state.ReplacementFields = JavDbReplacementSelection.LegacySignature;
+        }
+
         if (state.Successes.Count == 0 && state.Failures.Count == 0 &&
             json.Contains("\"items\"", StringComparison.OrdinalIgnoreCase))
         {
@@ -290,6 +297,8 @@ internal sealed class JavDbMetadataState
     public DateTimeOffset LastRunAtUtc { get; set; }
 
     public string LastRunMode { get; set; } = string.Empty;
+
+    public string ReplacementFields { get; set; } = string.Empty;
 
     public List<JavDbMetadataRecord> Successes { get; set; } = new();
 

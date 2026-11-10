@@ -80,9 +80,33 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("从来源刮削流派、标签和工作室数据")]
-    [Description("开启后，普通刮削会将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室。不同站点的数据往往较混乱，语言和格式难以统一，建议关闭，并定期运行“从JAVDB替换流派/标签/工作室数据”统一整理。")]
+    [Description("开启后，普通刮削会将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室。不同站点的数据往往较混乱，语言和格式难以统一，建议关闭，并定期运行“从JAVDB替换数据”统一整理。")]
 #endif
     public bool EnableGenreAndTagScraping { get; set; } = true;
+
+#if __EMBY__
+    [DisplayName("流派(标签)")]
+    [Description("使用 JAVDB 的标签替换影片流派。")]
+#endif
+    public bool ReplaceJavDbGenres { get; set; } = true;
+
+#if __EMBY__
+    [DisplayName("标签(系列)")]
+    [Description("使用 JAVDB 的系列替换影片标签。")]
+#endif
+    public bool ReplaceJavDbTags { get; set; } = true;
+
+#if __EMBY__
+    [DisplayName("工作室(厂牌,发行商)")]
+    [Description("使用 JAVDB 的片商和发行商替换影片工作室。")]
+#endif
+    public bool ReplaceJavDbStudios { get; set; } = true;
+
+#if __EMBY__
+    [DisplayName("演员名字")]
+    [Description("使用 JAVDB 的演员列表替换影片演员，同时保留导演等其他人员信息。")]
+#endif
+    public bool ReplaceJavDbActors { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("JAVDB 成功记录")]
@@ -111,29 +135,6 @@ public class PluginConfiguration : BasePluginConfiguration
     [ReadOnly(true)]
 #endif
     public string JavDbMetadataLastMode => FormatJavDbMetadataLastMode(GetJavDbMetadataSummary().LastRunMode);
-
-    private bool _clearJavDbMetadataRecords;
-
-#if __EMBY__
-    [DisplayName("清空 JAVDB 状态记录")]
-    [Description("勾选并保存设置后，删除全部成功和失败记录；下一次补全任务会重新执行全量更新。")]
-#endif
-    public bool ClearJavDbMetadataRecords
-    {
-        get => _clearJavDbMetadataRecords;
-        set
-        {
-            if (value)
-            {
-                JavDbMetadataStateStore.Clear(Plugin.Instance?.JavDbMetadataStatePath);
-                JavDbMetadataSuccessRecords = string.Empty;
-                JavDbMetadataFailureRecords = string.Empty;
-                JavDbMetadataRecordsInitialized = true;
-            }
-
-            _clearJavDbMetadataRecords = false;
-        }
-    }
 
 #if __EMBY__
     [Browsable(false)]
@@ -174,6 +175,7 @@ public class PluginConfiguration : BasePluginConfiguration
         {
             nameof(JavDbMetadataSyncMode.Full) => "全量替换",
             nameof(JavDbMetadataSyncMode.Incremental) => "增量补全",
+            nameof(JavDbMetadataSyncMode.Skipped) => "未选择替换项目",
             _ => "尚未运行"
         };
     }

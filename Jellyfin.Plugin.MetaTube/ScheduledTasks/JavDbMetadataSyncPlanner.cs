@@ -5,7 +5,8 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 internal enum JavDbMetadataSyncMode
 {
     Full,
-    Incremental
+    Incremental,
+    Skipped
 }
 
 internal sealed class JavDbMetadataSyncPlan
@@ -20,7 +21,12 @@ internal sealed class JavDbMetadataSyncPlan
 
     public int SkippedItemCount { get; set; }
 
-    public string ModeLabel => Mode == JavDbMetadataSyncMode.Full ? "全量" : "增量";
+    public string ModeLabel => Mode switch
+    {
+        JavDbMetadataSyncMode.Full => "全量",
+        JavDbMetadataSyncMode.Incremental => "增量",
+        _ => "跳过"
+    };
 }
 
 internal static class JavDbMetadataSyncPlanner
