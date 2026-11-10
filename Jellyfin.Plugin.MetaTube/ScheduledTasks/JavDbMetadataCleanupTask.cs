@@ -51,9 +51,9 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 
     public string Description =>
 #if __EMBY__
-        "手动删除所有影片的流派、标签、工作室、评分、演员、导演和发行时间等其它元数据，同时清空 JAVDB 成功与失败处理记录。处理记录清空后，下一次“从JAVDB替换其它元数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
+        "手动删除所有影片的流派、标签、工作室、评分和导演等其它元数据，同时清空 JAVDB 成功与失败处理记录。演员和发行时间属于基础元数据，将保持不变。处理记录清空后，下一次“从JAVDB替换其它元数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
 #else
-        "Deletes other metadata such as genres, tags, studios, ratings, actors, directors and release dates from all movies, then resets the JAVDB success and failure records. After the records are cleared, the next “Replace Other Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
+        "Deletes other metadata such as genres, tags, studios, ratings and directors from all movies, then resets the JAVDB success and failure records. Actors and release dates are basic metadata and remain unchanged. After the records are cleared, the next “Replace Other Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
 #endif
 
     public string Category => Plugin.ProviderName;
@@ -105,7 +105,13 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 
             try
             {
-                await ApplyMetadataAsync(item, new JavDbCleanupSnapshot(), true, cancellationToken)
+                var target = new JavDbCleanupSnapshot
+                {
+                    PremiereDate = original.PremiereDate,
+                    ProductionYear = original.ProductionYear,
+                    People = ClonePeople(original.People.Where(person => !IsDirector(person)))
+                };
+                await ApplyMetadataAsync(item, target, cancellationToken)
                     .ConfigureAwait(false);
                 cleared++;
             }
@@ -152,7 +158,6 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
     private async Task ApplyMetadataAsync(
         BaseItem item,
         JavDbCleanupSnapshot snapshot,
-        bool removeActorsAndDirectors,
         CancellationToken cancellationToken)
     {
         var original = CaptureSnapshot(item);
@@ -165,9 +170,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
             item.PremiereDate = snapshot.PremiereDate;
             item.ProductionYear = snapshot.ProductionYear;
 
-            var people = removeActorsAndDirectors
-                ? ClonePeople(GetPeople(item).Where(person => !IsActorOrDirector(person)))
-                : ClonePeople(snapshot.People);
+            var people = ClonePeople(snapshot.People);
 #if __EMBY__
             _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
             _libraryManager.UpdatePeople(item, people, false);
@@ -192,7 +195,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
     {
         try
         {
-            await ApplyMetadataAsync(item, snapshot, false, CancellationToken.None)
+            await ApplyMetadataAsync(item, snapshot, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
@@ -242,17 +245,15 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
                (snapshot.Tags?.Length ?? 0) > 0 ||
                (snapshot.Studios?.Length ?? 0) > 0 ||
                snapshot.CommunityRating.HasValue ||
-               snapshot.PremiereDate.HasValue ||
-               snapshot.ProductionYear.HasValue ||
-               (snapshot.People?.Any(IsActorOrDirector) ?? false);
+               (snapshot.People?.Any(IsDirector) ?? false);
     }
 
-    private static bool IsActorOrDirector(PersonInfo person)
+    private static bool IsDirector(PersonInfo person)
     {
 #if __EMBY__
-        return person?.Type == PersonType.Actor || person?.Type == PersonType.Director;
+        return person?.Type == PersonType.Director;
 #else
-        return person?.Type == PersonKind.Actor || person?.Type == PersonKind.Director;
+        return person?.Type == PersonKind.Director;
 #endif
     }
 
