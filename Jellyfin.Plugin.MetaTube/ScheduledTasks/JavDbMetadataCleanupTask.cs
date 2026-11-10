@@ -13,6 +13,12 @@ using Jellyfin.Data.Enums;
 using Microsoft.Extensions.Logging;
 #endif
 
+#if __EMBY__
+using JavDbPremiereDate = System.DateTimeOffset;
+#else
+using JavDbPremiereDate = System.DateTime;
+#endif
+
 namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 
 public sealed class JavDbMetadataCleanupTask : IScheduledTask
@@ -38,16 +44,16 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 
     public string Name =>
 #if __EMBY__
-        "删除流派/标签/工作室数据";
+        "删除其它元数据";
 #else
-        "Delete Genres, Tags and Studios";
+        "Delete Other Metadata";
 #endif
 
     public string Description =>
 #if __EMBY__
-        "手动删除所有影片的流派、标签和工作室，同时清空 JAVDB 成功与失败处理记录。处理记录清空后，下一次“从JAVDB替换数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
+        "手动删除所有影片的流派、标签、工作室、评分、演员、导演和发行时间等其它元数据，同时清空 JAVDB 成功与失败处理记录。处理记录清空后，下一次“从JAVDB替换其它元数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
 #else
-        "Deletes genres, tags and studios from all movies and resets the JAVDB success and failure records. After the records are cleared, the next “Replace Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
+        "Deletes other metadata such as genres, tags, studios, ratings, actors, directors and release dates from all movies, then resets the JAVDB success and failure records. After the records are cleared, the next “Replace Other Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
 #endif
 
     public string Category => Plugin.ProviderName;
@@ -77,7 +83,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 #endif
         }).ToList();
 
-        _logger.Info("JAVDB 清理任务开始 | 影片总数={0}", items.Count);
+        _logger.Info("JAVDB 其它元数据清理任务开始 | 影片总数={0}", items.Count);
         await ResetJavDbRecordsAsync(cancellationToken).ConfigureAwait(false);
         progress?.Report(0);
 
@@ -90,44 +96,38 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
             var item = items[index];
             progress?.Report(items.Count == 0 ? 100 : (double)index / items.Count * 100);
 
-            if ((item.Genres?.Length ?? 0) == 0 &&
-                (item.Tags?.Length ?? 0) == 0 &&
-                (item.Studios?.Length ?? 0) == 0)
+            var original = CaptureSnapshot(item);
+            if (!HasOtherMetadata(original))
             {
                 skipped++;
                 continue;
             }
 
-            var originalGenres = item.Genres;
-            var originalTags = item.Tags;
-            var originalStudios = item.Studios;
             try
             {
-                await ApplyMetadataAsync(
-                        item, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
-                        cancellationToken)
+                await ApplyMetadataAsync(item, new JavDbCleanupSnapshot(), true, cancellationToken)
                     .ConfigureAwait(false);
                 cleared++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                await TryRestoreMetadataAsync(item, originalGenres, originalTags, originalStudios)
+                await TryRestoreMetadataAsync(item, original)
                     .ConfigureAwait(false);
                 throw;
             }
             catch (Exception exception)
             {
-                await TryRestoreMetadataAsync(item, originalGenres, originalTags, originalStudios)
+                await TryRestoreMetadataAsync(item, original)
                     .ConfigureAwait(false);
                 failed++;
                 _logger.Error(
-                    "JAVDB 清理影片失败 | 项目ID={0} | 标题={1} | 错误={2}",
+                    "JAVDB 其它元数据清理失败 | 项目ID={0} | 标题={1} | 错误={2}",
                     item.Id.ToString("N"), item.Name, exception.Message);
             }
         }
 
         _logger.Info(
-            "JAVDB 清理任务完成 | 已清理={0} | 跳过={1} | 失败={2}",
+            "JAVDB 其它元数据清理任务完成 | 已清理={0} | 跳过={1} | 失败={2}",
             cleared, skipped, failed);
         progress?.Report(100);
     }
@@ -146,58 +146,148 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
         configuration.JavDbMetadataRecordsInitialized = true;
         Plugin.Instance.SaveConfiguration(configuration);
 
-        _logger.Info("JAVDB 处理记录已清空 | 下一次“从JAVDB替换数据”将执行全量替换");
+        _logger.Info("JAVDB 处理记录已清空 | 下一次“从JAVDB替换其它元数据”将执行全量替换");
     }
 
     private async Task ApplyMetadataAsync(
         BaseItem item,
-        string[] genres,
-        string[] tags,
-        string[] studios,
+        JavDbCleanupSnapshot snapshot,
+        bool removeActorsAndDirectors,
         CancellationToken cancellationToken)
     {
-        var originalGenres = item.Genres;
-        var originalTags = item.Tags;
-        var originalStudios = item.Studios;
+        var original = CaptureSnapshot(item);
         try
         {
-            item.Genres = genres;
-            item.Tags = tags;
-            item.Studios = studios;
+            item.Genres = CloneValues(snapshot.Genres);
+            item.Tags = CloneValues(snapshot.Tags);
+            item.Studios = CloneValues(snapshot.Studios);
+            item.CommunityRating = snapshot.CommunityRating;
+            item.PremiereDate = snapshot.PremiereDate;
+            item.ProductionYear = snapshot.ProductionYear;
+
+            var people = removeActorsAndDirectors
+                ? ClonePeople(GetPeople(item).Where(person => !IsActorOrDirector(person)))
+                : ClonePeople(snapshot.People);
 #if __EMBY__
             _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
+            _libraryManager.UpdatePeople(item, people, false);
             await Task.CompletedTask.ConfigureAwait(false);
 #else
             await _libraryManager
                 .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
                 .ConfigureAwait(false);
+            await _libraryManager
+                .UpdatePeopleAsync(item, people, cancellationToken)
+                .ConfigureAwait(false);
 #endif
         }
         catch
         {
-            item.Genres = originalGenres;
-            item.Tags = originalTags;
-            item.Studios = originalStudios;
+            RestoreInMemory(item, original);
             throw;
         }
     }
 
-    private async Task TryRestoreMetadataAsync(
-        BaseItem item,
-        string[] genres,
-        string[] tags,
-        string[] studios)
+    private async Task TryRestoreMetadataAsync(BaseItem item, JavDbCleanupSnapshot snapshot)
     {
         try
         {
-            await ApplyMetadataAsync(item, genres, tags, studios, CancellationToken.None)
+            await ApplyMetadataAsync(item, snapshot, false, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
         {
             _logger.Error(
-                "JAVDB 清理影片恢复失败 | 项目ID={0} | 标题={1} | 错误={2}",
+                "JAVDB 其它元数据恢复失败 | 项目ID={0} | 标题={1} | 错误={2}",
                 item.Id.ToString("N"), item.Name, exception.Message);
         }
+    }
+
+    private JavDbCleanupSnapshot CaptureSnapshot(BaseItem item)
+    {
+        return new JavDbCleanupSnapshot
+        {
+            Genres = CloneValues(item.Genres),
+            Tags = CloneValues(item.Tags),
+            Studios = CloneValues(item.Studios),
+            CommunityRating = item.CommunityRating,
+            PremiereDate = item.PremiereDate,
+            ProductionYear = item.ProductionYear,
+            People = ClonePeople(GetPeople(item))
+        };
+    }
+
+    private List<PersonInfo> GetPeople(BaseItem item)
+    {
+#if __EMBY__
+        return _libraryManager.GetItemPeople(item) ?? new List<PersonInfo>();
+#else
+        return _libraryManager.GetPeople(item)?.ToList() ?? new List<PersonInfo>();
+#endif
+    }
+
+    private static void RestoreInMemory(BaseItem item, JavDbCleanupSnapshot snapshot)
+    {
+        item.Genres = CloneValues(snapshot.Genres);
+        item.Tags = CloneValues(snapshot.Tags);
+        item.Studios = CloneValues(snapshot.Studios);
+        item.CommunityRating = snapshot.CommunityRating;
+        item.PremiereDate = snapshot.PremiereDate;
+        item.ProductionYear = snapshot.ProductionYear;
+    }
+
+    private static bool HasOtherMetadata(JavDbCleanupSnapshot snapshot)
+    {
+        return (snapshot.Genres?.Length ?? 0) > 0 ||
+               (snapshot.Tags?.Length ?? 0) > 0 ||
+               (snapshot.Studios?.Length ?? 0) > 0 ||
+               snapshot.CommunityRating.HasValue ||
+               snapshot.PremiereDate.HasValue ||
+               snapshot.ProductionYear.HasValue ||
+               (snapshot.People?.Any(IsActorOrDirector) ?? false);
+    }
+
+    private static bool IsActorOrDirector(PersonInfo person)
+    {
+#if __EMBY__
+        return person?.Type == PersonType.Actor || person?.Type == PersonType.Director;
+#else
+        return person?.Type == PersonKind.Actor || person?.Type == PersonKind.Director;
+#endif
+    }
+
+    private static List<PersonInfo> ClonePeople(IEnumerable<PersonInfo> people)
+    {
+        return (people ?? Enumerable.Empty<PersonInfo>())
+            .Where(person => person != null)
+            .Select(person => new PersonInfo
+            {
+                Name = person.Name,
+                Role = person.Role,
+                Type = person.Type
+            })
+            .ToList();
+    }
+
+    private static string[] CloneValues(IEnumerable<string> values)
+    {
+        return (values ?? Enumerable.Empty<string>()).ToArray();
+    }
+
+    private sealed class JavDbCleanupSnapshot
+    {
+        public string[] Genres { get; init; } = Array.Empty<string>();
+
+        public string[] Tags { get; init; } = Array.Empty<string>();
+
+        public string[] Studios { get; init; } = Array.Empty<string>();
+
+        public float? CommunityRating { get; init; }
+
+        public JavDbPremiereDate? PremiereDate { get; init; }
+
+        public int? ProductionYear { get; init; }
+
+        public List<PersonInfo> People { get; init; } = new();
     }
 }
