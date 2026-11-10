@@ -1,6 +1,8 @@
 using System.Collections.Specialized;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Web;
 using Jellyfin.Plugin.MetaTube.Metadata;
@@ -22,6 +24,7 @@ public static class ApiClient
     private const string TranslateApi = "/v1/translate";
     private const string FlareSolverrConfigApi = "/v1/config/flaresolverr";
     private const string DomainsConfigApi = "/v1/config/domains";
+    private const string JavDbSessionConfigApi = "/v1/config/javdb-session";
 
     private static string ComposeUrl(string path, NameValueCollection nv)
     {
@@ -314,10 +317,89 @@ public static class ApiClient
         }
     }
 
+    private static async Task ConfigureJavDbSessionAsync(CancellationToken cancellationToken)
+    {
+        var server = Plugin.Instance.Configuration.Server;
+        var token = Plugin.Instance.Configuration.Token;
+        var username = Plugin.Instance.Configuration.JavDbUsername?.Trim() ?? string.Empty;
+        var password = Plugin.Instance.Configuration.JavDbPassword ?? string.Empty;
+        var cookie = Plugin.Instance.Configuration.JavDbCookie?.Trim() ?? string.Empty;
+        var signature = GetJavDbSessionSignature(username, password, cookie);
+
+        if (IsJavDbSessionSyncCurrent(server, token, signature))
+            return;
+
+        await JavDbSessionSyncLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            server = Plugin.Instance.Configuration.Server;
+            token = Plugin.Instance.Configuration.Token;
+            username = Plugin.Instance.Configuration.JavDbUsername?.Trim() ?? string.Empty;
+            password = Plugin.Instance.Configuration.JavDbPassword ?? string.Empty;
+            cookie = Plugin.Instance.Configuration.JavDbCookie?.Trim() ?? string.Empty;
+            signature = GetJavDbSessionSignature(username, password, cookie);
+
+            if (IsJavDbSessionSyncCurrent(server, token, signature))
+                return;
+
+            var hasCredentials = username.Length > 0 || password.Length > 0 || cookie.Length > 0;
+            if (!IsJavDbSessionSyncInitialized && !hasCredentials)
+            {
+                MarkJavDbSessionSyncComplete(server, token, signature, DateTimeOffset.MaxValue);
+                return;
+            }
+
+            try
+            {
+                var request = new HttpRequestMessage(HttpMethod.Put, ComposeUrl(JavDbSessionConfigApi,
+                    new NameValueCollection()));
+                request.Content = JsonContent.Create(new JavDbSessionConfigRequest
+                {
+                    Username = username,
+                    Password = password,
+                    Cookie = cookie
+                });
+
+                AddGeneralHeaders(request);
+
+                if (!string.IsNullOrWhiteSpace(token))
+                    request.Headers.Authorization =
+                        new AuthenticationHeaderValue("Bearer", token);
+
+                using var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                var result = await ReadDataAsync<JavDbSessionConfigResult>(response, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var nextSync = result.Authenticated
+                    ? DateTimeOffset.UtcNow.Add(JavDbSessionAuthenticatedSyncInterval)
+                    : DateTimeOffset.UtcNow.Add(JavDbSessionRetryInterval);
+                if (!hasCredentials && !result.Configured)
+                    nextSync = DateTimeOffset.MaxValue;
+
+                MarkJavDbSessionSyncComplete(server, token, signature, nextSync);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // Login configuration must not block anonymous metadata requests.
+                MarkJavDbSessionSyncComplete(server, token, signature,
+                    DateTimeOffset.UtcNow.Add(JavDbSessionRetryInterval));
+            }
+        }
+        finally
+        {
+            JavDbSessionSyncLock.Release();
+        }
+    }
+
     private static async Task ConfigureServerAsync(CancellationToken cancellationToken)
     {
         await ConfigureFlareSolverrAsync(cancellationToken).ConfigureAwait(false);
         await ConfigureDomainsAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureJavDbSessionAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static (string Signature, Dictionary<string, string[]> Providers) GetDomainsConfiguration()
@@ -384,6 +466,46 @@ public static class ApiClient
         }
     }
 
+    private static string GetJavDbSessionSignature(string username, string password, string cookie)
+    {
+        var material = string.Join("\n", username, password, cookie);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+    }
+
+    private static bool IsJavDbSessionSyncCurrent(string server, string token, string signature)
+    {
+        lock (JavDbSessionSyncStateLock)
+        {
+            return _javDbSessionSyncInitialized &&
+                   _lastJavDbSessionServer == server &&
+                   _lastJavDbSessionToken == token &&
+                   _lastJavDbSessionSignature == signature &&
+                   DateTimeOffset.UtcNow < _javDbSessionNextSync;
+        }
+    }
+
+    private static void MarkJavDbSessionSyncComplete(string server, string token, string signature,
+        DateTimeOffset nextSync)
+    {
+        lock (JavDbSessionSyncStateLock)
+        {
+            _javDbSessionSyncInitialized = true;
+            _lastJavDbSessionServer = server;
+            _lastJavDbSessionToken = token;
+            _lastJavDbSessionSignature = signature;
+            _javDbSessionNextSync = nextSync;
+        }
+    }
+
+    private static bool IsJavDbSessionSyncInitialized
+    {
+        get
+        {
+            lock (JavDbSessionSyncStateLock)
+                return _javDbSessionSyncInitialized;
+        }
+    }
+
     private static async Task<T> GetDataAsync<T>(string url, bool requireAuth,
         CancellationToken cancellationToken)
     {
@@ -438,10 +560,14 @@ public static class ApiClient
     private static readonly HttpClient HttpClient;
     private static readonly SemaphoreSlim FlareSolverrSyncLock = new(1, 1);
     private static readonly SemaphoreSlim DomainsSyncLock = new(1, 1);
+    private static readonly SemaphoreSlim JavDbSessionSyncLock = new(1, 1);
     private static readonly object FlareSolverrSyncStateLock = new();
     private static readonly object DomainsSyncStateLock = new();
+    private static readonly object JavDbSessionSyncStateLock = new();
     private static readonly TimeSpan FlareSolverrSyncInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DomainsSyncInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan JavDbSessionAuthenticatedSyncInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan JavDbSessionRetryInterval = TimeSpan.FromMinutes(5);
     private static string _lastFlareSolverrServer;
     private static string _lastFlareSolverrToken;
     private static string _lastFlareSolverrEndpoint;
@@ -451,6 +577,11 @@ public static class ApiClient
     private static string _lastDomainsToken;
     private static string _lastDomainsSignature;
     private static DateTimeOffset _lastDomainsSync = DateTimeOffset.MinValue;
+    private static bool _javDbSessionSyncInitialized;
+    private static string _lastJavDbSessionServer;
+    private static string _lastJavDbSessionToken;
+    private static string _lastJavDbSessionSignature;
+    private static DateTimeOffset _javDbSessionNextSync = DateTimeOffset.MinValue;
     private static string DefaultUserAgent => $"{Plugin.ProviderName}/{Plugin.Instance.Version}";
 
     static ApiClient()
@@ -498,5 +629,32 @@ public static class ApiClient
     {
         [JsonPropertyName("providers")]
         public Dictionary<string, string[]> Providers { get; set; }
+    }
+
+    private sealed class JavDbSessionConfigRequest
+    {
+        [JsonPropertyName("username")]
+        public string Username { get; set; }
+
+        [JsonPropertyName("password")]
+        public string Password { get; set; }
+
+        [JsonPropertyName("cookie")]
+        public string Cookie { get; set; }
+    }
+
+    private sealed class JavDbSessionConfigResult
+    {
+        [JsonPropertyName("configured")]
+        public bool Configured { get; set; }
+
+        [JsonPropertyName("authenticated")]
+        public bool Authenticated { get; set; }
+
+        [JsonPropertyName("mode")]
+        public string Mode { get; set; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; }
     }
 }

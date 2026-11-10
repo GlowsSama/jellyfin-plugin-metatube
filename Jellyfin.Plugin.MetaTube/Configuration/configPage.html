@@ -323,6 +323,24 @@
                     </div>
 
                     <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbUsername">JavDB 账号：</label>
+                        <input id="txtJavDbUsername" is="emby-input" name="txtJavDbUsername" type="text" autocomplete="username"/>
+                        <div class="fieldDescription">JavDB 登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPassword">JavDB 密码：</label>
+                        <input id="txtJavDbPassword" is="emby-input" name="txtJavDbPassword" type="password" autocomplete="new-password"/>
+                        <div class="fieldDescription">密码会通过当前 MetaTube 插件 HTTP 配置同步到服务端；请确保服务端地址仅在本机或可信局域网内使用。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbCookie">JavDB Cookie：</label>
+                        <textarea class="emby-input" id="txtJavDbCookie" is="emby-input" name="txtJavDbCookie" rows="3" spellcheck="false" autocomplete="off"></textarea>
+                        <div class="fieldDescription">优先于账号密码。可从已登录浏览器复制完整 Cookie 请求头，例如 session=...; cf_clearance=...。Cookie 会同步到 MetaTube 服务端。</div>
+                    </div>
+
+                    <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtMissAvBackupDomains">MissAV 备用域名：</label>
                         <input id="txtMissAvBackupDomains" is="emby-input" name="txtMissAvBackupDomains" type="text"/>
                         <div class="fieldDescription">主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。</div>
@@ -838,6 +856,9 @@
                 page.querySelector('#chkEnableLibraryProviderFilter').checked = config.EnableLibraryProviderFilter;
                 $('#txtLibraryProviderFilterRules', page).val(config.LibraryProviderFilterRules).change();
                 $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
+                $('#txtJavDbUsername', page).val(config.JavDbUsername).change();
+                $('#txtJavDbPassword', page).val(config.JavDbPassword).change();
+                $('#txtJavDbCookie', page).val(config.JavDbCookie).change();
                 $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
                 $('#txtNameTemplate', page).val(config.NameTemplate).change();
@@ -891,6 +912,9 @@
                 config.EnableLibraryProviderFilter = $('#chkEnableLibraryProviderFilter', form).prop('checked');
                 config.LibraryProviderFilterRules = $('#txtLibraryProviderFilterRules', form).val();
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
+                config.JavDbUsername = $('#txtJavDbUsername', form).val();
+                config.JavDbPassword = $('#txtJavDbPassword', form).val();
+                config.JavDbCookie = $('#txtJavDbCookie', form).val();
                 config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');
                 config.NameTemplate = $('#txtNameTemplate', form).val();

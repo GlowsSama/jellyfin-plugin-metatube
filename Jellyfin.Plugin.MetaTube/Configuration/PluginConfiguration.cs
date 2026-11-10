@@ -456,6 +456,24 @@ public class PluginConfiguration : BasePluginConfiguration
     public string JavDbBackupDomains { get; set; } = string.Empty;
 
 #if __EMBY__
+    [DisplayName("JavDB 账号")]
+    [Description("JavDB 登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。")]
+#endif
+    public string JavDbUsername { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JavDB 密码")]
+    [Description("JavDB 登录密码。凭据会通过当前 MetaTube 插件 HTTP 配置同步到服务端。")]
+#endif
+    public string JavDbPassword { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JavDB Cookie")]
+    [Description("优先于账号密码。可从已登录浏览器复制完整 Cookie 请求头；内容会同步到 MetaTube 服务端。")]
+#endif
+    public string JavDbCookie { get; set; } = string.Empty;
+
+#if __EMBY__
     [DisplayName("MissAV 备用域名")]
     [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。")]
 #endif
