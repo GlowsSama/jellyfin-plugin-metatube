@@ -89,12 +89,34 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 #endif
         }).ToList();
 
+        var configuration = Plugin.Instance.Configuration;
+        var selection = JavDbReplacementSelection.FromConfiguration(configuration);
         var state = await LoadStateAsync(cancellationToken).ConfigureAwait(false);
+        if (!selection.HasAny)
+        {
+            state.LastRunAtUtc = DateTimeOffset.UtcNow;
+            state.LastRunMode = nameof(JavDbMetadataSyncMode.Skipped);
+            state.ReplacementFields = selection.Signature;
+            await TrySaveStateAsync(state, cancellationToken).ConfigureAwait(false);
+            _logger.Warn("JAVDB 元数据任务已跳过 | 原因=未在插件设置中勾选任何替换项目");
+            progress?.Report(100);
+            return;
+        }
+
+        if (!string.Equals(state.ReplacementFields, selection.Signature, StringComparison.Ordinal))
+        {
+            _logger.Info(
+                "JAVDB 替换项目发生变化 | 上次={0} | 当前={1} | 将清除成功记录并执行全量处理",
+                state.ReplacementFields, selection.Signature);
+            state.Successes.Clear();
+            state.ReplacementFields = selection.Signature;
+        }
+
         var plan = JavDbMetadataSyncPlanner.Create(items, state, GetJavDbKeyword);
         var itemList = plan.PendingItems;
         _logger.Info(
-            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 影片总数={2} | 待处理={3} | 跳过={4} | 成功记录={5} | 失败记录={6}",
-            plan.ModeLabel, plan.ModeReason, plan.TotalItemCount, itemList.Count, plan.SkippedItemCount,
+            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 影片总数={3} | 待处理={4} | 跳过={5} | 成功记录={6} | 失败记录={7}",
+            plan.ModeLabel, plan.ModeReason, selection.Signature, plan.TotalItemCount, itemList.Count, plan.SkippedItemCount,
             state.Successes.Count, state.Failures.Count);
         progress?.Report(0);
 
@@ -129,39 +151,50 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     continue;
                 }
 
-                var originalGenres = item.Genres;
-                var originalTags = item.Tags;
-                var originalStudios = item.Studios;
-                var metadataCleared = true;
+                var original = CaptureSnapshot(item, selection.Actors);
+                var metadataCleared = false;
                 try
                 {
-                    await ReplaceMetadataAsync(
-                            item, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
-                            cancellationToken)
+                    var cleared = new JavDbMetadataSnapshot
+                    {
+                        Genres = selection.Genres ? Array.Empty<string>() : original.Genres,
+                        Tags = selection.Tags ? Array.Empty<string>() : original.Tags,
+                        Studios = selection.Studios ? Array.Empty<string>() : original.Studios,
+                        People = selection.Actors ? RemoveActors(original.People) : null
+                    };
+                    metadataCleared = true;
+                    await ApplyMetadataAsync(item, cleared, selection, cancellationToken)
                         .ConfigureAwait(false);
 
                     await WaitForJavDbRequestSlotAsync(cancellationToken).ConfigureAwait(false);
                     var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
                         .ConfigureAwait(false);
-                    var genres = BuildGenres(info.Genres);
-                    var tags = BuildTags(info.Series);
-                    var studios = BuildStudios(info.Maker, info.Label);
-                    var itemUpdated = false;
-
-                    if (!HasSameValues(item.Genres, genres) ||
-                        !HasSameValues(item.Tags, tags) ||
-                        !HasSameValues(item.Studios, studios))
+                    var desired = new JavDbMetadataSnapshot
                     {
-                        await ReplaceMetadataAsync(item, genres, tags, studios, cancellationToken)
+                        Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
+                        Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
+                        Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
+                        People = selection.Actors
+                            ? BuildPeopleWithJavDbActors(original.People, info.Actors)
+                            : null
+                    };
+                    var current = CaptureSnapshot(item, selection.Actors);
+                    var needsApply = HasChanges(current, desired, selection);
+                    var itemUpdated = HasChanges(original, desired, selection);
+
+                    if (needsApply)
+                    {
+                        await ApplyMetadataAsync(item, desired, selection, cancellationToken)
                             .ConfigureAwait(false);
-                        updated++;
-                        itemUpdated = true;
                     }
+
+                    if (itemUpdated)
+                        updated++;
 
                     RecordOutcome(state, item, keyword, true, string.Empty);
                     _logger.Info(
-                        "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 已更新={3}",
-                        keyword, item.Id.ToString("N"), item.Name,
+                        "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 替换项目={3} | 已更新={4}",
+                        keyword, item.Id.ToString("N"), item.Name, selection.Signature,
                         itemUpdated ? "是" : "否");
                     pendingStateWrites++;
                 }
@@ -169,7 +202,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 {
                     if (metadataCleared)
                     {
-                        await TryRestoreMetadataAsync(item, originalGenres, originalTags, originalStudios)
+                        await TryRestoreMetadataAsync(item, original, selection)
                             .ConfigureAwait(false);
                     }
 
@@ -179,7 +212,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 {
                     if (metadataCleared)
                     {
-                        await TryRestoreMetadataAsync(item, originalGenres, originalTags, originalStudios)
+                        await TryRestoreMetadataAsync(item, original, selection)
                             .ConfigureAwait(false);
                     }
 
@@ -374,48 +407,85 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return trimmed.Length >= 3 ? trimmed : trimmed.PadLeft(3, '0');
     }
 
-    private async Task ReplaceMetadataAsync(
+    private JavDbMetadataSnapshot CaptureSnapshot(BaseItem item, bool includePeople)
+    {
+        return new JavDbMetadataSnapshot
+        {
+            Genres = CloneValues(item.Genres),
+            Tags = CloneValues(item.Tags),
+            Studios = CloneValues(item.Studios),
+            People = includePeople ? ClonePeople(GetPeople(item)) : null
+        };
+    }
+
+    private List<PersonInfo> GetPeople(BaseItem item)
+    {
+#if __EMBY__
+        return _libraryManager.GetItemPeople(item) ?? new List<PersonInfo>();
+#else
+        return _libraryManager.GetPeople(item)?.ToList() ?? new List<PersonInfo>();
+#endif
+    }
+
+    private async Task ApplyMetadataAsync(
         BaseItem item,
-        string[] genres,
-        string[] tags,
-        string[] studios,
+        JavDbMetadataSnapshot target,
+        JavDbReplacementSelection selection,
         CancellationToken cancellationToken)
     {
-        var originalGenres = item.Genres;
-        var originalTags = item.Tags;
-        var originalStudios = item.Studios;
+        var original = CaptureSnapshot(item, selection.Actors);
         try
         {
-            item.Genres = genres;
-            item.Tags = tags;
-            item.Studios = studios;
+            if (selection.Genres)
+                item.Genres = CloneValues(target.Genres);
+            if (selection.Tags)
+                item.Tags = CloneValues(target.Tags);
+            if (selection.Studios)
+                item.Studios = CloneValues(target.Studios);
+
 #if __EMBY__
-            _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
+            if (selection.HasMetadata)
+            {
+                _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
+            }
+
+            if (selection.Actors)
+            {
+                _libraryManager.UpdatePeople(item, ClonePeople(target.People), false);
+            }
+
             await Task.CompletedTask.ConfigureAwait(false);
 #else
-            await _libraryManager
-                .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
-                .ConfigureAwait(false);
+            if (selection.HasMetadata)
+            {
+                await _libraryManager
+                    .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (selection.Actors)
+            {
+                await _libraryManager
+                    .UpdatePeopleAsync(item, ClonePeople(target.People), cancellationToken)
+                    .ConfigureAwait(false);
+            }
 #endif
         }
         catch
         {
-            item.Genres = originalGenres;
-            item.Tags = originalTags;
-            item.Studios = originalStudios;
+            RestoreInMemory(item, original, selection);
             throw;
         }
     }
 
     private async Task TryRestoreMetadataAsync(
         BaseItem item,
-        string[] genres,
-        string[] tags,
-        string[] studios)
+        JavDbMetadataSnapshot snapshot,
+        JavDbReplacementSelection selection)
     {
         try
         {
-            await ReplaceMetadataAsync(item, genres, tags, studios, CancellationToken.None)
+            await ApplyMetadataAsync(item, snapshot, selection, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
@@ -424,6 +494,100 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 "JAVDB 元数据恢复失败 | 项目ID={0} | 标题={1} | 错误={2}",
                 item.Id.ToString("N"), item.Name, exception.Message);
         }
+    }
+
+    private static void RestoreInMemory(
+        BaseItem item,
+        JavDbMetadataSnapshot snapshot,
+        JavDbReplacementSelection selection)
+    {
+        if (selection.Genres)
+            item.Genres = CloneValues(snapshot.Genres);
+        if (selection.Tags)
+            item.Tags = CloneValues(snapshot.Tags);
+        if (selection.Studios)
+            item.Studios = CloneValues(snapshot.Studios);
+    }
+
+    private static bool HasChanges(
+        JavDbMetadataSnapshot original,
+        JavDbMetadataSnapshot desired,
+        JavDbReplacementSelection selection)
+    {
+        return (selection.Genres && !HasSameValues(original.Genres, desired.Genres)) ||
+               (selection.Tags && !HasSameValues(original.Tags, desired.Tags)) ||
+               (selection.Studios && !HasSameValues(original.Studios, desired.Studios)) ||
+               (selection.Actors && !HasSameActorNames(original.People, desired.People));
+    }
+
+    private static List<PersonInfo> BuildPeopleWithJavDbActors(
+        IEnumerable<PersonInfo> currentPeople,
+        IEnumerable<string> javDbActors)
+    {
+        var people = RemoveActors(currentPeople);
+        foreach (var name in CleanValues(javDbActors))
+        {
+            people.Add(new PersonInfo
+            {
+                Name = name,
+#if __EMBY__
+                Type = PersonType.Actor
+#else
+                Type = PersonKind.Actor
+#endif
+            });
+        }
+
+        return people;
+    }
+
+    private static List<PersonInfo> RemoveActors(IEnumerable<PersonInfo> people)
+    {
+        return ClonePeople((people ?? Enumerable.Empty<PersonInfo>())
+            .Where(person => !IsActor(person)));
+    }
+
+    private static bool IsActor(PersonInfo person)
+    {
+#if __EMBY__
+        return person?.Type == PersonType.Actor;
+#else
+        return person?.Type == PersonKind.Actor;
+#endif
+    }
+
+    private static bool HasSameActorNames(
+        IEnumerable<PersonInfo> currentPeople,
+        IEnumerable<PersonInfo> expectedPeople)
+    {
+        var currentNames = (currentPeople ?? Enumerable.Empty<PersonInfo>())
+            .Where(IsActor)
+            .Select(person => person.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name));
+        var expectedNames = (expectedPeople ?? Enumerable.Empty<PersonInfo>())
+            .Where(IsActor)
+            .Select(person => person.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name));
+        return currentNames.SequenceEqual(expectedNames, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static List<PersonInfo> ClonePeople(IEnumerable<PersonInfo> people)
+    {
+        return (people ?? Enumerable.Empty<PersonInfo>())
+            .Where(person => person != null)
+            .Select(person => new PersonInfo
+            {
+                Name = person.Name,
+                Role = person.Role,
+                Type = person.Type,
+                SortOrder = person.SortOrder
+            })
+            .ToList();
+    }
+
+    private static string[] CloneValues(IEnumerable<string> values)
+    {
+        return (values ?? Enumerable.Empty<string>()).ToArray();
     }
 
     private static string[] BuildGenres(IEnumerable<string> javDbGenres)
@@ -454,6 +618,17 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return (current ?? Enumerable.Empty<string>())
             .SequenceEqual(expected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
+
+    private sealed class JavDbMetadataSnapshot
+    {
+        public string[] Genres { get; init; } = Array.Empty<string>();
+
+        public string[] Tags { get; init; } = Array.Empty<string>();
+
+        public string[] Studios { get; init; } = Array.Empty<string>();
+
+        public List<PersonInfo> People { get; init; }
+    }
 }
 
 public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
@@ -476,16 +651,16 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "从JAVDB替换流派/标签/工作室数据";
+        "从JAVDB替换数据";
 #else
-        "Replace Genres, Tags and Studios from JAVDB";
+        "Replace Metadata from JAVDB";
 #endif
 
     public override string Description =>
 #if __EMBY__
-        "默认根据状态记录自动选择模式：没有成功记录时执行全量替换；有成功记录时执行增量补全，只处理新影片和失败记录。任务会先清空影片现有的流派、标签和工作室，再请求 JAVDB 写入新数据；请求或写入失败时会自动恢复原数据。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "按插件设置中“JAVDB替换数据”的勾选项替换影片数据。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
-        "Uses the saved state to choose the mode automatically: a full replacement runs when there are no successful records, while later runs process new items and retry failures. Existing genres, tags and studios are cleared before JAVDB is requested, and the original values are restored if the request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
+        "Replaces only the metadata fields selected in the plugin settings. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
