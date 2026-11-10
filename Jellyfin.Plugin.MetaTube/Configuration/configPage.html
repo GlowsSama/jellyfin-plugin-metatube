@@ -132,70 +132,25 @@
                             <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
                             <span>仅获取基础元数据</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启后，普通刮削只写入番号、标题、简介、演员和发行时间，不会获取流派、标签、工作室、评分或导演。关闭后可由来源补充流派、标签和工作室；评分、导演及其他扩展数据建议通过“从JAVDB替换数据”计划任务统一补全。</div>
+                        <div class="fieldDescription checkboxFieldDescription">基础元数据包括番号、标题、演员和发行时间。开启后普通刮削不会获取流派、标签、工作室、评分或导演；关闭后允许来源补充其它元数据。建议通过“从JAVDB替换其它元数据”计划任务统一整理其它元数据。</div>
                     </div>
                 </div>
 
                 <div class="verticalSection">
-                    <h2 class="sectionTitle">JAVDB 元数据任务</h2>
+                    <h2 class="sectionTitle">JAVDB 其它元数据任务</h2>
 
-                    <div class="fieldDescription">运行“从JAVDB替换数据”时，只替换以下已勾选的项目；未勾选的项目保持不变。</div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbGenres" is="emby-checkbox" name="chkReplaceJavDbGenres" type="checkbox"/>
-                            <span>流派(标签)</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的标签替换影片流派。</div>
-                    </div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbTags" is="emby-checkbox" name="chkReplaceJavDbTags" type="checkbox"/>
-                            <span>标签(系列)</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的系列替换影片标签。</div>
-                    </div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbStudios" is="emby-checkbox" name="chkReplaceJavDbStudios" type="checkbox"/>
-                            <span>工作室(厂牌,发行商)</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的片商和发行商替换影片工作室。</div>
-                    </div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbActors" is="emby-checkbox" name="chkReplaceJavDbActors" type="checkbox"/>
-                            <span>演员真实信息</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的演员列表替换影片演员，同时保留导演等其他人员信息。</div>
-                    </div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbDirectors" is="emby-checkbox" name="chkReplaceJavDbDirectors" type="checkbox"/>
-                            <span>导演信息</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的导演列表替换影片导演，同时保留演员等其他人员信息。</div>
-                    </div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbRating" is="emby-checkbox" name="chkReplaceJavDbRating" type="checkbox"/>
-                            <span>评分</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的公众评分替换影片评分。</div>
-                    </div>
-
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkReplaceJavDbReleaseDate" is="emby-checkbox" name="chkReplaceJavDbReleaseDate" type="checkbox"/>
-                            <span>发行时间</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">使用 JAVDB 的发行日期替换影片首映日期和发行年份。</div>
-                    </div>
+                    <details class="metaTubeProviderFilter" id="javDbReplacementFilter" open>
+                        <summary>
+                            <span class="metaTubeProviderFilterSummaryText">
+                                <span class="inputLabel inputLabelUnfocused">JAVDB替换其它元数据：</span>
+                                <span id="javDbReplacementFilterSummary">未选择其它元数据</span>
+                            </span>
+                            <span class="metaTubeProviderFilterCount" id="javDbReplacementFilterCount">已选择 0 个</span>
+                            <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
+                        </summary>
+                        <div class="metaTubeProviderFilterOptions" id="javDbReplacementFilterOptions" role="group" aria-label="JAVDB替换其它元数据"></div>
+                    </details>
+                    <div class="fieldDescription">运行“从JAVDB替换其它元数据”时，只替换已勾选的项目；未勾选的项目保持不变。基础元数据通常由普通刮削源提供，本任务可额外替换勾选的演员和发行时间等其它元数据。</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
@@ -217,7 +172,7 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。没有成功记录或替换项目发生变化时执行全量替换；否则执行增量补全，只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB；请求或写入失败时会自动恢复原数据。</div>
+                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。没有成功记录或替换项目发生变化时执行全量替换；否则执行增量补全，只处理新影片和失败记录。任务会先清空已勾选的其它元数据，再请求 JAVDB；请求或写入失败时会自动恢复原数据。</div>
                 </div>
 
                 <div class="verticalSection">
@@ -518,6 +473,16 @@
             "JavDB"
         ];
 
+        var MetaTubeJavDbReplacementOptions = [
+            { value: "genres", label: "流派（标签）", configKey: "ReplaceJavDbGenres" },
+            { value: "tags", label: "标签（系列）", configKey: "ReplaceJavDbTags" },
+            { value: "studios", label: "工作室（厂牌、发行商）", configKey: "ReplaceJavDbStudios" },
+            { value: "actors", label: "演员信息", configKey: "ReplaceJavDbActors" },
+            { value: "directors", label: "导演信息", configKey: "ReplaceJavDbDirectors" },
+            { value: "rating", label: "评分", configKey: "ReplaceJavDbRating" },
+            { value: "releaseDate", label: "发行时间", configKey: "ReplaceJavDbReleaseDate" }
+        ];
+
         function splitMovieProviderFilter(value) {
             var providers = [];
             (value || "").split(",").forEach(function (provider) {
@@ -548,8 +513,31 @@
             container.appendChild(label);
         }
 
+        function addJavDbReplacementOption(container, option) {
+            var label = document.createElement("label");
+            label.className = "metaTubeProviderFilterOption emby-checkbox-label";
+
+            var input = document.createElement("input", { is: "emby-checkbox" });
+            input.type = "checkbox";
+            input.className = "metaTubeJavDbReplacementOption";
+            input.value = option.value;
+
+            var text = document.createElement("span");
+            text.textContent = option.label;
+
+            label.appendChild(input);
+            label.appendChild(text);
+            container.appendChild(label);
+        }
+
         function getSelectedMovieProviders() {
             return $('.metaTubeMovieProviderFilterOption:checked').map(function () {
+                return this.value;
+            }).get();
+        }
+
+        function getSelectedJavDbReplacementFields() {
+            return $('.metaTubeJavDbReplacementOption:checked').map(function () {
                 return this.value;
             }).get();
         }
@@ -616,6 +604,70 @@
             updateMovieProviderFilterState();
         }
 
+        function updateJavDbReplacementFilterState() {
+            var selected = getSelectedJavDbReplacementFields();
+            var selectedLabels = MetaTubeJavDbReplacementOptions
+                .filter(function (option) {
+                    return selected.indexOf(option.value) !== -1;
+                })
+                .map(function (option) {
+                    return option.label;
+                });
+            var total = $('.metaTubeJavDbReplacementOption').length;
+            var selectAll = $('#chkJavDbReplacementSelectAll');
+
+            $('#javDbReplacementFilterSummary').text(
+                selectedLabels.length ? selectedLabels.join("、") : "未选择其它元数据");
+            $('#javDbReplacementFilterCount').text("已选择 " + selected.length + " 个");
+            selectAll.prop("checked", total > 0 && selected.length === total);
+            selectAll.prop("indeterminate", selected.length > 0 && selected.length < total);
+        }
+
+        function renderJavDbReplacementFilter(config) {
+            config = config || {};
+            var options = $('#javDbReplacementFilterOptions');
+            var selectedOptions = MetaTubeJavDbReplacementOptions.filter(function (option) {
+                return config[option.configKey] === true;
+            });
+
+            options.empty();
+
+            var selectAllLabel = document.createElement("label");
+            selectAllLabel.className =
+                "metaTubeProviderFilterOption metaTubeProviderSelectAll emby-checkbox-label";
+
+            var selectAll = document.createElement("input", { is: "emby-checkbox" });
+            selectAll.id = "chkJavDbReplacementSelectAll";
+            selectAll.type = "checkbox";
+            selectAllLabel.appendChild(selectAll);
+
+            var selectAllText = document.createElement("span");
+            selectAllText.textContent = "全选";
+            selectAllLabel.appendChild(selectAllText);
+            options[0].appendChild(selectAllLabel);
+
+            MetaTubeJavDbReplacementOptions.forEach(function (option) {
+                addJavDbReplacementOption(options[0], option);
+            });
+
+            selectedOptions.forEach(function (selectedOption) {
+                $('.metaTubeJavDbReplacementOption').filter(function () {
+                    return this.value === selectedOption.value;
+                }).prop("checked", true);
+            });
+
+            options.off(".metaTubeJavDbReplacementFilter")
+                .on("change.metaTubeJavDbReplacementFilter", ".metaTubeJavDbReplacementOption",
+                    updateJavDbReplacementFilterState);
+            $('#chkJavDbReplacementSelectAll').off(".metaTubeJavDbReplacementFilter")
+                .on("change.metaTubeJavDbReplacementFilter", function () {
+                    $('.metaTubeJavDbReplacementOption').prop("checked", this.checked);
+                    updateJavDbReplacementFilterState();
+                });
+
+            updateJavDbReplacementFilterState();
+        }
+
         $('.selectTranslationMode').on('change', function (_) {
             if (this.value === "Disabled") {
                 $('.selectTranslationModeEnabled').css('display', 'none');
@@ -668,13 +720,7 @@
                 page.querySelector('#chkEnableCollections').checked = config.EnableCollections;
                 page.querySelector('#chkEnableTrailers').checked = config.EnableTrailers;
                 page.querySelector('#chkEnableBasicMetadataOnly').checked = config.EnableBasicMetadataOnly;
-                page.querySelector('#chkReplaceJavDbGenres').checked = config.ReplaceJavDbGenres;
-                page.querySelector('#chkReplaceJavDbTags').checked = config.ReplaceJavDbTags;
-                page.querySelector('#chkReplaceJavDbStudios').checked = config.ReplaceJavDbStudios;
-                page.querySelector('#chkReplaceJavDbActors').checked = config.ReplaceJavDbActors;
-                page.querySelector('#chkReplaceJavDbDirectors').checked = config.ReplaceJavDbDirectors;
-                page.querySelector('#chkReplaceJavDbRating').checked = config.ReplaceJavDbRating;
-                page.querySelector('#chkReplaceJavDbReleaseDate').checked = config.ReplaceJavDbReleaseDate;
+                renderJavDbReplacementFilter(config);
                 $('#txtJavDbMetadataSuccessCount', page).text(config.JavDbMetadataSuccessCount);
                 $('#txtJavDbMetadataFailureCount', page).text(config.JavDbMetadataFailureCount);
                 $('#txtJavDbMetadataLastRun', page).text(config.JavDbMetadataLastRun);
@@ -724,13 +770,14 @@
                 config.EnableCollections = $('#chkEnableCollections', form).prop('checked');
                 config.EnableTrailers = $('#chkEnableTrailers', form).prop('checked');
                 config.EnableBasicMetadataOnly = $('#chkEnableBasicMetadataOnly', form).prop('checked');
-                config.ReplaceJavDbGenres = $('#chkReplaceJavDbGenres', form).prop('checked');
-                config.ReplaceJavDbTags = $('#chkReplaceJavDbTags', form).prop('checked');
-                config.ReplaceJavDbStudios = $('#chkReplaceJavDbStudios', form).prop('checked');
-                config.ReplaceJavDbActors = $('#chkReplaceJavDbActors', form).prop('checked');
-                config.ReplaceJavDbDirectors = $('#chkReplaceJavDbDirectors', form).prop('checked');
-                config.ReplaceJavDbRating = $('#chkReplaceJavDbRating', form).prop('checked');
-                config.ReplaceJavDbReleaseDate = $('#chkReplaceJavDbReleaseDate', form).prop('checked');
+                var selectedJavDbReplacementFields = getSelectedJavDbReplacementFields();
+                config.ReplaceJavDbGenres = selectedJavDbReplacementFields.indexOf("genres") !== -1;
+                config.ReplaceJavDbTags = selectedJavDbReplacementFields.indexOf("tags") !== -1;
+                config.ReplaceJavDbStudios = selectedJavDbReplacementFields.indexOf("studios") !== -1;
+                config.ReplaceJavDbActors = selectedJavDbReplacementFields.indexOf("actors") !== -1;
+                config.ReplaceJavDbDirectors = selectedJavDbReplacementFields.indexOf("directors") !== -1;
+                config.ReplaceJavDbRating = selectedJavDbReplacementFields.indexOf("rating") !== -1;
+                config.ReplaceJavDbReleaseDate = selectedJavDbReplacementFields.indexOf("releaseDate") !== -1;
                 config.EnableBadges = $('#chkEnableBadges', form).prop('checked');
                 config.BadgeUrl = $('#txtBadgeUrl', form).val();
                 config.PrimaryImageRatio = $('#txtPrimaryImageRatio', form).val();
