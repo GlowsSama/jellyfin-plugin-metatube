@@ -55,34 +55,16 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableCollections { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("添加导演信息")]
-    [Description("为对应视频的元数据添加导演信息。")]
-#endif
-    public bool EnableDirectors { get; set; } = true;
-
-#if __EMBY__
-    [DisplayName("评分系统")]
-    [Description("显示原始网站的用户评分。")]
-#endif
-    public bool EnableRatings { get; set; } = true;
-
-#if __EMBY__
     [DisplayName("刮削预告片")]
     [Description("生成 strm 格式的在线视频预告片。")]
 #endif
     public bool EnableTrailers { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("使用演员真实信息")]
-    [Description("从 AVBASE 搜索并替换为真实演员姓名。")]
+    [DisplayName("仅获取基础元数据")]
+    [Description("开启后，普通刮削只写入番号、标题、简介、演员和发行时间，不会获取流派、标签、工作室、评分或导演。关闭后可由来源补充流派、标签和工作室；评分、导演及其他扩展数据建议通过“从JAVDB替换数据”计划任务统一补全。")]
 #endif
-    public bool EnableRealActorNames { get; set; } = false;
-
-#if __EMBY__
-    [DisplayName("从来源刮削流派、标签和工作室数据")]
-    [Description("开启后，普通刮削会将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室。不同站点的数据往往较混乱，语言和格式难以统一，建议关闭，并定期运行“从JAVDB替换数据”统一整理。")]
-#endif
-    public bool EnableGenreAndTagScraping { get; set; } = true;
+    public bool EnableBasicMetadataOnly { get; set; } = true;
 
 #if __EMBY__
     [DisplayName("流派(标签)")]
@@ -103,10 +85,28 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool ReplaceJavDbStudios { get; set; } = true;
 
 #if __EMBY__
-    [DisplayName("演员名字")]
+    [DisplayName("演员真实信息")]
     [Description("使用 JAVDB 的演员列表替换影片演员，同时保留导演等其他人员信息。")]
 #endif
     public bool ReplaceJavDbActors { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("导演信息")]
+    [Description("使用 JAVDB 的导演列表替换影片导演，同时保留演员等其他人员信息。")]
+#endif
+    public bool ReplaceJavDbDirectors { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("评分")]
+    [Description("使用 JAVDB 的公众评分替换影片评分。")]
+#endif
+    public bool ReplaceJavDbRating { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("发行时间")]
+    [Description("使用 JAVDB 的发行日期替换影片首映日期和发行年份。")]
+#endif
+    public bool ReplaceJavDbReleaseDate { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("JAVDB 成功记录")]

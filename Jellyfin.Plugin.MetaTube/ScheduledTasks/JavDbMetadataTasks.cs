@@ -35,6 +35,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     private static readonly Regex NumericDateNumberPattern = new(
         @"(?<!\d)(?<number>\d{6}[-_]\d{3})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex PersonNameSeparatorPattern = new(
+        @"\s*[,，、;/；|｜]\s*",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger _logger;
@@ -151,7 +154,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     continue;
                 }
 
-                var original = CaptureSnapshot(item, selection.Actors);
+                var original = CaptureSnapshot(item, selection.HasPeople);
                 var metadataCleared = false;
                 try
                 {
@@ -160,7 +163,10 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         Genres = selection.Genres ? Array.Empty<string>() : original.Genres,
                         Tags = selection.Tags ? Array.Empty<string>() : original.Tags,
                         Studios = selection.Studios ? Array.Empty<string>() : original.Studios,
-                        People = selection.Actors ? RemoveActors(original.People) : null
+                        CommunityRating = selection.Rating ? null : original.CommunityRating,
+                        PremiereDate = selection.ReleaseDate ? null : original.PremiereDate,
+                        ProductionYear = selection.ReleaseDate ? null : original.ProductionYear,
+                        People = selection.HasPeople ? RemoveSelectedPeople(original.People, selection) : null
                     };
                     metadataCleared = true;
                     await ApplyMetadataAsync(item, cleared, selection, cancellationToken)
@@ -174,11 +180,18 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
                         Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
                         Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
-                        People = selection.Actors
-                            ? BuildPeopleWithJavDbActors(original.People, info.Actors)
+                        CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
+                        PremiereDate = selection.ReleaseDate
+                            ? info.ReleaseDate.GetValidDateTime()
+                            : original.PremiereDate,
+                        ProductionYear = selection.ReleaseDate
+                            ? info.ReleaseDate.GetValidYear()
+                            : original.ProductionYear,
+                        People = selection.HasPeople
+                            ? BuildPeopleWithJavDbSelections(original.People, info.Actors, info.Director, selection)
                             : null
                     };
-                    var current = CaptureSnapshot(item, selection.Actors);
+                    var current = CaptureSnapshot(item, selection.HasPeople);
                     var needsApply = HasChanges(current, desired, selection);
                     var itemUpdated = HasChanges(original, desired, selection);
 
@@ -414,6 +427,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             Genres = CloneValues(item.Genres),
             Tags = CloneValues(item.Tags),
             Studios = CloneValues(item.Studios),
+            CommunityRating = item.CommunityRating,
+            PremiereDate = item.PremiereDate,
+            ProductionYear = item.ProductionYear,
             People = includePeople ? ClonePeople(GetPeople(item)) : null
         };
     }
@@ -433,7 +449,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         JavDbReplacementSelection selection,
         CancellationToken cancellationToken)
     {
-        var original = CaptureSnapshot(item, selection.Actors);
+        var original = CaptureSnapshot(item, selection.HasPeople);
         try
         {
             if (selection.Genres)
@@ -442,6 +458,13 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 item.Tags = CloneValues(target.Tags);
             if (selection.Studios)
                 item.Studios = CloneValues(target.Studios);
+            if (selection.Rating)
+                item.CommunityRating = target.CommunityRating;
+            if (selection.ReleaseDate)
+            {
+                item.PremiereDate = target.PremiereDate;
+                item.ProductionYear = target.ProductionYear;
+            }
 
 #if __EMBY__
             if (selection.HasMetadata)
@@ -449,7 +472,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
             }
 
-            if (selection.Actors)
+            if (selection.HasPeople)
             {
                 _libraryManager.UpdatePeople(item, ClonePeople(target.People), false);
             }
@@ -463,7 +486,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     .ConfigureAwait(false);
             }
 
-            if (selection.Actors)
+            if (selection.HasPeople)
             {
                 await _libraryManager
                     .UpdatePeopleAsync(item, ClonePeople(target.People), cancellationToken)
@@ -507,6 +530,13 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             item.Tags = CloneValues(snapshot.Tags);
         if (selection.Studios)
             item.Studios = CloneValues(snapshot.Studios);
+        if (selection.Rating)
+            item.CommunityRating = snapshot.CommunityRating;
+        if (selection.ReleaseDate)
+        {
+            item.PremiereDate = snapshot.PremiereDate;
+            item.ProductionYear = snapshot.ProductionYear;
+        }
     }
 
     private static bool HasChanges(
@@ -517,23 +547,44 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return (selection.Genres && !HasSameValues(original.Genres, desired.Genres)) ||
                (selection.Tags && !HasSameValues(original.Tags, desired.Tags)) ||
                (selection.Studios && !HasSameValues(original.Studios, desired.Studios)) ||
-               (selection.Actors && !HasSameActorNames(original.People, desired.People));
+               (selection.Rating && original.CommunityRating != desired.CommunityRating) ||
+               (selection.ReleaseDate &&
+                (original.PremiereDate != desired.PremiereDate ||
+                 original.ProductionYear != desired.ProductionYear)) ||
+               (selection.Actors && !HasSamePersonNames(original.People, desired.People, false)) ||
+               (selection.Directors && !HasSamePersonNames(original.People, desired.People, true));
     }
 
-    private static List<PersonInfo> BuildPeopleWithJavDbActors(
+    private static List<PersonInfo> BuildPeopleWithJavDbSelections(
         IEnumerable<PersonInfo> currentPeople,
-        IEnumerable<string> javDbActors)
+        IEnumerable<string> javDbActors,
+        string javDbDirectors,
+        JavDbReplacementSelection selection)
     {
-        var people = RemoveActors(currentPeople);
-        foreach (var name in CleanValues(javDbActors))
+        var people = ClonePeople(currentPeople);
+        if (selection.Actors)
+            people = ReplacePeople(people, CleanValues(javDbActors), false);
+        if (selection.Directors)
+            people = ReplacePeople(people, SplitPersonNames(javDbDirectors), true);
+        return people;
+    }
+
+    private static List<PersonInfo> ReplacePeople(
+        IEnumerable<PersonInfo> currentPeople,
+        IEnumerable<string> names,
+        bool directors)
+    {
+        var people = ClonePeople((currentPeople ?? Enumerable.Empty<PersonInfo>())
+            .Where(person => directors ? !IsDirector(person) : !IsActor(person)));
+        foreach (var name in names)
         {
             people.Add(new PersonInfo
             {
                 Name = name,
 #if __EMBY__
-                Type = PersonType.Actor
+                Type = directors ? PersonType.Director : PersonType.Actor
 #else
-                Type = PersonKind.Actor
+                Type = directors ? PersonKind.Director : PersonKind.Actor
 #endif
             });
         }
@@ -541,10 +592,13 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return people;
     }
 
-    private static List<PersonInfo> RemoveActors(IEnumerable<PersonInfo> people)
+    private static List<PersonInfo> RemoveSelectedPeople(
+        IEnumerable<PersonInfo> people,
+        JavDbReplacementSelection selection)
     {
         return ClonePeople((people ?? Enumerable.Empty<PersonInfo>())
-            .Where(person => !IsActor(person)));
+            .Where(person => !(selection.Actors && IsActor(person)) &&
+                             !(selection.Directors && IsDirector(person))));
     }
 
     private static bool IsActor(PersonInfo person)
@@ -556,16 +610,26 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 #endif
     }
 
-    private static bool HasSameActorNames(
+    private static bool IsDirector(PersonInfo person)
+    {
+#if __EMBY__
+        return person?.Type == PersonType.Director;
+#else
+        return person?.Type == PersonKind.Director;
+#endif
+    }
+
+    private static bool HasSamePersonNames(
         IEnumerable<PersonInfo> currentPeople,
-        IEnumerable<PersonInfo> expectedPeople)
+        IEnumerable<PersonInfo> expectedPeople,
+        bool directors)
     {
         var currentNames = (currentPeople ?? Enumerable.Empty<PersonInfo>())
-            .Where(IsActor)
+            .Where(person => directors ? IsDirector(person) : IsActor(person))
             .Select(person => person.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name));
         var expectedNames = (expectedPeople ?? Enumerable.Empty<PersonInfo>())
-            .Where(IsActor)
+            .Where(person => directors ? IsDirector(person) : IsActor(person))
             .Select(person => person.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name));
         return currentNames.SequenceEqual(expectedNames, StringComparer.OrdinalIgnoreCase);
@@ -604,6 +668,18 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return CleanValues(values).ToArray();
     }
 
+    private static float? BuildRating(float score)
+    {
+        return score > 0 ? (float?)Math.Round(score * 2, 1) : null;
+    }
+
+    private static IEnumerable<string> SplitPersonNames(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? Enumerable.Empty<string>()
+            : CleanValues(PersonNameSeparatorPattern.Split(value));
+    }
+
     private static IEnumerable<string> CleanValues(IEnumerable<string> values)
     {
         return (values ?? Enumerable.Empty<string>())
@@ -625,6 +701,12 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         public string[] Tags { get; init; } = Array.Empty<string>();
 
         public string[] Studios { get; init; } = Array.Empty<string>();
+
+        public float? CommunityRating { get; init; }
+
+        public DateTime? PremiereDate { get; init; }
+
+        public int? ProductionYear { get; init; }
 
         public List<PersonInfo> People { get; init; }
     }
@@ -657,7 +739,7 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "按插件设置中“JAVDB替换数据”的勾选项替换影片数据。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "按插件设置中“JAVDB替换数据”的勾选项替换流派、标签、工作室、演员、导演、评分和发行时间。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
         "Replaces only the metadata fields selected in the plugin settings. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
