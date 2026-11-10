@@ -739,7 +739,7 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "按插件设置中“从JAVDB补充其他元数据”的勾选项替换流派、标签、工作室、演员、导演、评分和发行时间。基础元数据通常由普通刮削源提供，本任务只处理勾选的其他元数据。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。\n\n如需再次全量运行点击下面“删除其它元数据”。";
 #else
         "Replaces only the other metadata fields selected in the plugin settings. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Each movie-number task is followed by a 10-second interval. A failed domain is retried twice before rotating to the next backup. If every domain fails, cooldowns escalate through 15, 30, 60 and 120 minutes.";
 #endif

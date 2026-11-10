@@ -209,7 +209,7 @@
                             <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
                             <span>仅获取基础元数据 (建议关闭)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启后仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。关闭后普通刮削源可以补充其他元数据；如需格式更统一规整，建议通过计划任务“从JAVDB补充其他元数据”获取。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。<br><br>关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-从JAVDB补充其他元数据获取。<br><br>从JAVDB获取的其他数据格式更统一更规整。</div>
                     </div>
 
                     <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
@@ -249,7 +249,7 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。如需再次全量运行，请点击下方“删除其它元数据”。</div>
+                    <div class="fieldDescription">运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。<br><br>如需再次全量运行点击下面“删除其它元数据”。</div>
                 </div>
 
                 <div class="verticalSection">

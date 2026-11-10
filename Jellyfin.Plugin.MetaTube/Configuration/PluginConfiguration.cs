@@ -62,7 +62,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("仅获取基础元数据 (建议关闭)")]
-    [Description("开启后仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。关闭后普通刮削源可以补充其他元数据；如需格式更统一规整，建议通过计划任务“从JAVDB补充其他元数据”获取。")]
+    [Description("开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。\n\n关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-从JAVDB补充其他元数据获取。\n\n从JAVDB获取的其他数据格式更统一更规整。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
