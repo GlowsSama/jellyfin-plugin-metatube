@@ -178,7 +178,12 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastRun">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。本页显示状态统计；增量判断使用插件配置目录中的 JSON 状态文件，清空记录后下一次任务会执行全量替换。</div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 上次模式：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
+                    </div>
+
+                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。没有成功记录时执行全量替换；有成功记录时执行增量补全，只处理新影片和失败记录。任务会先清空现有流派、标签和工作室，再请求 JAVDB；请求或写入失败时会自动恢复原数据。</div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
@@ -643,6 +648,7 @@
                 $('#txtJavDbMetadataSuccessCount', page).text(config.JavDbMetadataSuccessCount);
                 $('#txtJavDbMetadataFailureCount', page).text(config.JavDbMetadataFailureCount);
                 $('#txtJavDbMetadataLastRun', page).text(config.JavDbMetadataLastRun);
+                $('#txtJavDbMetadataLastMode', page).text(config.JavDbMetadataLastMode);
                 page.querySelector('#chkClearJavDbMetadataRecords').checked = false;
                 page.querySelector('#chkEnableBadges').checked = config.EnableBadges;
                 $('#txtBadgeUrl', page).val(config.BadgeUrl).change();

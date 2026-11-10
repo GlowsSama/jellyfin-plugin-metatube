@@ -7,6 +7,7 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 internal static class JavDbMetadataStateStore
 {
     public const string StateFileName = "javdb-metadata-incremental-state.json";
+    public const int CurrentSchemaVersion = 2;
     private const int MaxRecordsPerTable = 10000;
     private static readonly SemaphoreSlim FileLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -78,7 +79,8 @@ internal static class JavDbMetadataStateStore
             {
                 SuccessCount = state.Successes.Count,
                 FailureCount = state.Failures.Count,
-                LastRunAtUtc = state.LastRunAtUtc
+                LastRunAtUtc = state.LastRunAtUtc,
+                LastRunMode = state.LastRunMode
             };
         }
         finally
@@ -167,6 +169,8 @@ internal static class JavDbMetadataStateStore
     {
         var state = JsonSerializer.Deserialize<JavDbMetadataState>(json, JsonOptions)
                     ?? new JavDbMetadataState();
+        state.Successes ??= new List<JavDbMetadataRecord>();
+        state.Failures ??= new List<JavDbMetadataRecord>();
         if (state.Successes.Count == 0 && state.Failures.Count == 0 &&
             json.Contains("\"items\"", StringComparison.OrdinalIgnoreCase))
         {
@@ -231,6 +235,9 @@ internal static class JavDbMetadataStateStore
 
     private static void NormalizeState(JavDbMetadataState state)
     {
+        state.SchemaVersion = CurrentSchemaVersion;
+        state.Successes ??= new List<JavDbMetadataRecord>();
+        state.Failures ??= new List<JavDbMetadataRecord>();
         state.Successes = NormalizeRecords(state.Successes);
         state.Failures = NormalizeRecords(state.Failures);
 
@@ -272,11 +279,17 @@ internal sealed class JavDbMetadataSummary
     public int FailureCount { get; set; }
 
     public DateTimeOffset LastRunAtUtc { get; set; }
+
+    public string LastRunMode { get; set; } = string.Empty;
 }
 
 internal sealed class JavDbMetadataState
 {
+    public int SchemaVersion { get; set; }
+
     public DateTimeOffset LastRunAtUtc { get; set; }
+
+    public string LastRunMode { get; set; } = string.Empty;
 
     public List<JavDbMetadataRecord> Successes { get; set; } = new();
 
