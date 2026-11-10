@@ -462,7 +462,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JavDB 备用域名")]
-    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。")]
+    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。")]
 #endif
     public string JavDbBackupDomains { get; set; } = string.Empty;
 
@@ -486,7 +486,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("MissAV 备用域名")]
-    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔，最多 4 个备用域名。")]
+    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。")]
 #endif
     public string MissAvBackupDomains { get; set; } = string.Empty;
 
