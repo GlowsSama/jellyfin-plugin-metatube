@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.MetaTube.Extensions;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
