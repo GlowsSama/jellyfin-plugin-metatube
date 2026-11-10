@@ -134,23 +134,23 @@
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">基础元数据包括番号、标题、演员和发行时间。开启后普通刮削不会获取流派、标签、工作室、评分或导演；关闭后允许来源补充其它元数据。建议通过“从JAVDB替换其它元数据”计划任务统一整理其它元数据。</div>
                     </div>
-                </div>
 
-                <div class="verticalSection">
-                    <h2 class="sectionTitle">JAVDB 其它元数据任务</h2>
-
-                    <details class="metaTubeProviderFilter" id="javDbReplacementFilter" open>
+                    <details class="metaTubeProviderFilter" id="javDbReplacementFilter">
                         <summary>
                             <span class="metaTubeProviderFilterSummaryText">
-                                <span class="inputLabel inputLabelUnfocused">JAVDB替换其它元数据：</span>
+                                <span class="inputLabel inputLabelUnfocused">其它元数据：</span>
                                 <span id="javDbReplacementFilterSummary">未选择其它元数据</span>
                             </span>
                             <span class="metaTubeProviderFilterCount" id="javDbReplacementFilterCount">已选择 0 个</span>
                             <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
                         </summary>
-                        <div class="metaTubeProviderFilterOptions" id="javDbReplacementFilterOptions" role="group" aria-label="JAVDB替换其它元数据"></div>
+                        <div class="metaTubeProviderFilterOptions" id="javDbReplacementFilterOptions" role="group" aria-label="其它元数据"></div>
                     </details>
-                    <div class="fieldDescription">运行“从JAVDB替换其它元数据”时，只替换已勾选的项目；未勾选的项目保持不变。基础元数据通常由普通刮削源提供，本任务可额外替换勾选的演员和发行时间等其它元数据。</div>
+                    <div class="fieldDescription">运行“从JAVDB替换其它元数据”时，只替换这里已勾选的项目；未勾选的项目保持不变。</div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">JAVDB 其它元数据任务</h2>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
