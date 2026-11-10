@@ -616,8 +616,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 
     private static string GetLibraryNameKey(string value)
     {
-        var key = NormalizeLookupText(value);
-        return key.Any() ? key : PluginConfiguration.NormalizeLibraryName(value);
+        return PluginConfiguration.NormalizeLibraryLookupName(value);
     }
 
     private async Task SetActorImageUrl(PersonInfo actor, CancellationToken cancellationToken)

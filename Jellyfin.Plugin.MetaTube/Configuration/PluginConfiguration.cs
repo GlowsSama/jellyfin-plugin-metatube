@@ -290,14 +290,14 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("启用媒体库自定义刮削源")]
     [Description(
-        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。无法定位媒体库时，仅保留自定义规则中配置的来源。自定义来源无结果时，自动使用全部已启用的刮削源兜底。")]
+        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。只要填写了有效规则，“从JAVDB替换其它元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。")]
 #endif
     public bool EnableLibraryProviderFilter { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("媒体库自定义刮削源")]
     [Description(
-        "每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,JAVDB\n当指定来源没有搜索结果时，会自动使用全部已启用的刮削源兜底。")]
+        "每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,JAVDB\n填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。")]
     [EditMultiline(8)]
 #endif
     public string LibraryProviderFilterRules { get; set; } = string.Empty;
@@ -445,6 +445,17 @@ public class PluginConfiguration : BasePluginConfiguration
         }
 
         return builder.ToString().Trim();
+    }
+
+    public static string NormalizeLibraryLookupName(string value)
+    {
+        var normalized = NormalizeLibraryName(value);
+        var key = new string(normalized
+            .Where(character => char.IsLetterOrDigit(character))
+            .Select(char.ToUpperInvariant)
+            .ToArray());
+
+        return key.Any() ? key : normalized;
     }
 
     private List<string> _movieProviderFilter;

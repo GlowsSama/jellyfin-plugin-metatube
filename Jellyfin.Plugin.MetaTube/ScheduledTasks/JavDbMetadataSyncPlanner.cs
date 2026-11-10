@@ -19,7 +19,11 @@ internal sealed class JavDbMetadataSyncPlan
 
     public List<BaseItem> PendingItems { get; set; } = new();
 
-    public int SkippedItemCount { get; set; }
+    public int SkippedWithoutNumberCount { get; set; }
+
+    public int SkippedByStateCount { get; set; }
+
+    public int SkippedItemCount => SkippedWithoutNumberCount + SkippedByStateCount;
 
     public string ModeLabel => Mode switch
     {
@@ -46,12 +50,18 @@ internal static class JavDbMetadataSyncPlanner
         var mode = state.Successes.Count == 0
             ? JavDbMetadataSyncMode.Full
             : JavDbMetadataSyncMode.Incremental;
-        var pendingItems = allItems
-            .Where(item =>
+        var candidates = allItems
+            .Select(item => new
             {
-                var keyword = keywordSelector(item);
-                return index.IsFailed(item, keyword) || !index.IsSuccessful(item, keyword);
+                Item = item,
+                Keyword = keywordSelector(item)?.Trim() ?? string.Empty
             })
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Keyword))
+            .ToList();
+        var pendingItems = candidates
+            .Where(candidate => index.IsFailed(candidate.Item, candidate.Keyword) ||
+                                !index.IsSuccessful(candidate.Item, candidate.Keyword))
+            .Select(candidate => candidate.Item)
             .ToList();
 
         return new JavDbMetadataSyncPlan
@@ -62,7 +72,8 @@ internal static class JavDbMetadataSyncPlanner
                 : "存在成功记录，仅处理新影片和失败记录",
             TotalItemCount = allItems.Count,
             PendingItems = pendingItems,
-            SkippedItemCount = allItems.Count - pendingItems.Count
+            SkippedWithoutNumberCount = allItems.Count - candidates.Count,
+            SkippedByStateCount = candidates.Count - pendingItems.Count
         };
     }
 

@@ -26,9 +26,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 {
     private const string JavDbProvider = "JavDB";
     private const int StateSaveBatchSize = 25;
-    private static readonly TimeSpan JavDbRequestInterval = TimeSpan.FromSeconds(10);
-    private static readonly SemaphoreSlim JavDbRequestGate = new(1, 1);
-    private static DateTimeOffset _lastJavDbRequestUtc = DateTimeOffset.MinValue;
+    private static readonly TimeSpan JavDbTaskInterval = TimeSpan.FromSeconds(10);
     private static readonly Regex Fc2NumberPattern = new(
         @"(?i)(?<![A-Z0-9])FC2(?:[-_\s]?PPV)?[-_\s]?(?<number>\d{5,})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -87,7 +85,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     {
         await Task.Yield();
 
-        var items = _libraryManager.GetItemList(new InternalItemsQuery
+        var allItems = _libraryManager.GetItemList(new InternalItemsQuery
         {
             MediaTypes = new[] { MediaType.Video },
             Recursive = true,
@@ -112,6 +110,12 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             return;
         }
 
+        var invalidFailureCount = state.Failures.RemoveAll(record => string.IsNullOrWhiteSpace(record.Keyword));
+        if (invalidFailureCount > 0)
+        {
+            _logger.Info("JAVDB 历史失败记录清理 | 移除无番号误记录={0}", invalidFailureCount);
+        }
+
         if (!string.Equals(state.ReplacementFields, selection.Signature, StringComparison.Ordinal))
         {
             _logger.Info(
@@ -121,12 +125,15 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             state.ReplacementFields = selection.Signature;
         }
 
-        var plan = JavDbMetadataSyncPlanner.Create(items, state, GetJavDbKeyword);
+        var libraryScope = JavDbLibraryScope.Filter(
+            _libraryManager, allItems, configuration.GetLibraryProviderFilters());
+        var plan = JavDbMetadataSyncPlanner.Create(libraryScope.Items, state, GetJavDbKeyword);
         var itemList = plan.PendingItems;
         _logger.Info(
-            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 影片总数={3} | 待处理={4} | 跳过={5} | 成功记录={6} | 失败记录={7}",
-            plan.ModeLabel, plan.ModeReason, selection.Signature, plan.TotalItemCount, itemList.Count, plan.SkippedItemCount,
-            state.Successes.Count, state.Failures.Count);
+            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 全库影片={3} | 媒体库范围={4} | 范围内影片={5} | 媒体库范围跳过={6} | 无番号跳过={7} | 记录跳过={8} | 待处理={9} | 成功记录={10} | 失败记录={11}",
+            plan.ModeLabel, plan.ModeReason, selection.Signature, allItems.Count, libraryScope.Description,
+            libraryScope.Items.Count, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
+            plan.SkippedByStateCount, itemList.Count, state.Successes.Count, state.Failures.Count);
         progress?.Report(0);
 
         var updated = 0;
@@ -145,23 +152,14 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 var keyword = GetJavDbKeyword(item);
                 if (string.IsNullOrWhiteSpace(keyword))
                 {
-                    failed++;
-                    const string message = "无法从标题、原始标题或文件名识别番号";
-                    _logger.Warn("JAVDB 元数据失败 | 项目ID={0} | 标题={1} | 错误={2}",
-                        item.Id.ToString("N"), item.Name, message);
-                    RecordOutcome(state, item, string.Empty, false, message);
-                    pendingStateWrites++;
-                    if (pendingStateWrites >= StateSaveBatchSize &&
-                        await TrySaveStateAsync(state, cancellationToken).ConfigureAwait(false))
-                    {
-                        pendingStateWrites = 0;
-                    }
-
+                    _logger.Debug("JAVDB 元数据跳过 | 项目ID={0} | 标题={1} | 原因=无法识别番号",
+                        item.Id.ToString("N"), item.Name);
                     continue;
                 }
 
                 var original = CaptureSnapshot(item, selection.HasPeople);
                 var metadataCleared = false;
+                var javDbRequested = false;
                 try
                 {
                     var cleared = new JavDbMetadataSnapshot
@@ -178,7 +176,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     await ApplyMetadataAsync(item, cleared, selection, cancellationToken)
                         .ConfigureAwait(false);
 
-                    await WaitForJavDbRequestSlotAsync(cancellationToken).ConfigureAwait(false);
+                    javDbRequested = true;
                     var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
                         .ConfigureAwait(false);
                     var desired = new JavDbMetadataSnapshot
@@ -248,6 +246,11 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     if (await TrySaveStateAsync(state, cancellationToken).ConfigureAwait(false))
                         pendingStateWrites = 0;
                 }
+
+                if (javDbRequested && index + 1 < itemList.Count)
+                {
+                    await Task.Delay(JavDbTaskInterval, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         finally
@@ -256,29 +259,10 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         _logger.Info(
-            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 跳过={3} | 状态文件={4}",
-            plan.ModeLabel, updated, failed, plan.SkippedItemCount, _stateFilePath);
+            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 媒体库范围跳过={3} | 无番号跳过={4} | 记录跳过={5} | 状态文件={6}",
+            plan.ModeLabel, updated, failed, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
+            plan.SkippedByStateCount, _stateFilePath);
         progress?.Report(100);
-    }
-
-    private static async Task WaitForJavDbRequestSlotAsync(CancellationToken cancellationToken)
-    {
-        await JavDbRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var elapsed = DateTimeOffset.UtcNow - _lastJavDbRequestUtc;
-            if (elapsed < JavDbRequestInterval)
-            {
-                await Task.Delay(JavDbRequestInterval - elapsed, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            _lastJavDbRequestUtc = DateTimeOffset.UtcNow;
-        }
-        finally
-        {
-            JavDbRequestGate.Release();
-        }
     }
 
     private async Task<bool> TrySaveStateAsync(JavDbMetadataState state, CancellationToken cancellationToken)
@@ -755,9 +739,9 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "按插件设置中“JAVDB替换其它元数据”的勾选项替换流派、标签、工作室、演员、导演、评分和发行时间。基础元数据通常由普通刮削源提供，本任务只处理勾选的其它元数据。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "按插件设置中“JAVDB替换其它元数据”的勾选项替换流派、标签、工作室、演员、导演、评分和发行时间。处理范围由“媒体库自定义刮削源”中的有效规则决定：填写规则时只处理这些媒体库，未填写时处理全库；无法识别番号的影片会直接跳过且不请求 JAVDB。基础元数据通常由普通刮削源提供，本任务只处理勾选的其它元数据。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。每个番号任务完成后间隔 10 秒；同一站点失败会自动重试两次，仍未成功才轮换备用站点；全部站点失败后按 15、30、60、120 分钟分级冷却。";
 #else
-        "Replaces only the other metadata fields selected in the plugin settings. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
+        "Replaces only the other metadata fields selected in the plugin settings. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Each movie-number task is followed by a 10-second interval. A failed domain is retried twice before rotating to the next backup. If every domain fails, cooldowns escalate through 15, 30, 60 and 120 minutes.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

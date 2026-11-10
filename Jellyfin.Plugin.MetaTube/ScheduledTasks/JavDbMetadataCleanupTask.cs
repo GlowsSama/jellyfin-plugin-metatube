@@ -51,9 +51,9 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 
     public string Description =>
 #if __EMBY__
-        "手动删除所有影片的流派、标签、工作室、评分和导演等其它元数据，同时清空 JAVDB 成功与失败处理记录。演员和发行时间属于基础元数据，将保持不变。处理记录清空后，下一次“从JAVDB替换其它元数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
+        "手动删除影片的流派、标签、工作室、评分和导演等其它元数据，同时清空 JAVDB 成功与失败处理记录。处理范围由“媒体库自定义刮削源”中的有效规则决定：填写规则时只处理这些媒体库，未填写时处理全库。演员和发行时间属于基础元数据，将保持不变。处理记录清空后，下一次“从JAVDB替换其它元数据”会执行全量替换。此任务不会请求 JAVDB，也不会自动重新刮削影片。";
 #else
-        "Deletes other metadata such as genres, tags, studios, ratings and directors from all movies, then resets the JAVDB success and failure records. Actors and release dates are basic metadata and remain unchanged. After the records are cleared, the next “Replace Other Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
+        "Deletes other metadata such as genres, tags, studios, ratings and directors, then resets the JAVDB success and failure records. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Actors and release dates are basic metadata and remain unchanged. After the records are cleared, the next “Replace Other Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
 #endif
 
     public string Category => Plugin.ProviderName;
@@ -72,7 +72,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
     {
         await Task.Yield();
 
-        var items = _libraryManager.GetItemList(new InternalItemsQuery
+        var allItems = _libraryManager.GetItemList(new InternalItemsQuery
         {
             MediaTypes = new[] { MediaType.Video },
             Recursive = true,
@@ -83,7 +83,13 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 #endif
         }).ToList();
 
-        _logger.Info("JAVDB 其它元数据清理任务开始 | 影片总数={0}", items.Count);
+        var configuration = Plugin.Instance.Configuration;
+        var libraryScope = JavDbLibraryScope.Filter(
+            _libraryManager, allItems, configuration.GetLibraryProviderFilters());
+        var items = libraryScope.Items;
+        _logger.Info(
+            "JAVDB 其它元数据清理任务开始 | 全库影片={0} | 媒体库范围={1} | 范围内影片={2} | 媒体库范围跳过={3}",
+            allItems.Count, libraryScope.Description, items.Count, libraryScope.SkippedItemCount);
         await ResetJavDbRecordsAsync(cancellationToken).ConfigureAwait(false);
         progress?.Report(0);
 
@@ -133,8 +139,8 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
         }
 
         _logger.Info(
-            "JAVDB 其它元数据清理任务完成 | 已清理={0} | 跳过={1} | 失败={2}",
-            cleared, skipped, failed);
+            "JAVDB 其它元数据清理任务完成 | 已清理={0} | 无其它元数据跳过={1} | 失败={2} | 媒体库范围跳过={3}",
+            cleared, skipped, failed, libraryScope.SkippedItemCount);
         progress?.Report(100);
     }
 

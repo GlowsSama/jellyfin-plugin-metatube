@@ -307,13 +307,13 @@
                             <input id="chkEnableLibraryProviderFilter" is="emby-checkbox" name="chkEnableLibraryProviderFilter" type="checkbox"/>
                             <span>启用媒体库自定义刮削源</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。自定义来源无结果时，自动使用全部已启用的刮削源兜底。</div>
+                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。只要填写了有效规则，“从JAVDB替换其它元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。</div>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtLibraryProviderFilterRules">媒体库自定义刮削源：</label>
                         <textarea class="emby-input" id="txtLibraryProviderFilterRules" is="emby-input" name="txtLibraryProviderFilterRules" rows="8"></textarea>
-                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,JAVDB。媒体库名称支持空格、中文和 | 等符号。当指定来源没有搜索结果时，会自动使用全部已启用的刮削源兜底。</div>
+                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,JAVDB。媒体库名称支持空格、中文和 | 等符号。填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。</div>
                     </div>
 
                     <div class="inputContainer">
