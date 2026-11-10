@@ -29,11 +29,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieInfo>, IHasOrder
 #endif
 {
-    private const string AvBase = "AVBASE";
     private const string Gfriends = "Gfriends";
     private const string Rating = "JP-18+";
 
-    private static readonly string[] AvBaseSupportedProviderNames = { "DUGA", "FANZA", "Getchu", "MGS" };
     private static readonly Regex MediaCodePattern = new(
         @"(?<![A-Z0-9])(?<prefix>[A-Z][A-Z0-9]{1,15})[\s_-]*(?<number>\d{2,8})(?![A-Z0-9])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -69,10 +67,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 
         // Preserve original title.
         var originalTitle = m.Title;
-
-        // Convert to real actor names.
-        if (Configuration.EnableRealActorNames)
-            await ConvertToRealActorNames(m, cancellationToken);
 
         // Substitute title.
         if (Configuration.EnableTitleSubstitution)
@@ -131,7 +125,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 OfficialRating = Rating,
                 PremiereDate = m.ReleaseDate.GetValidDateTime(),
                 ProductionYear = m.ReleaseDate.GetValidYear(),
-                Genres = Configuration.EnableGenreAndTagScraping && m.Genres?.Any() == true
+                Genres = !Configuration.EnableBasicMetadataOnly && m.Genres?.Any() == true
                     ? m.Genres
                     : Array.Empty<string>()
             },
@@ -148,10 +142,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         if (!string.IsNullOrWhiteSpace(trailerUrl))
             result.Item.SetTrailerUrl(trailerUrl);
 
-        // Set community rating.
-        if (Configuration.EnableRatings)
-            result.Item.CommunityRating = m.Score > 0 ? (float)Math.Round(m.Score * 2, 1) : null;
-
         // Add collection.
         if (Configuration.EnableCollections && !string.IsNullOrWhiteSpace(m.Series))
         {
@@ -159,10 +149,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             Logger.Info("Add Collection for movie {0} [{1}]", pid.ToString(), m.Series);
         }
 
-        if (Configuration.EnableGenreAndTagScraping)
+        if (!Configuration.EnableBasicMetadataOnly)
         {
-            // Genres are populated from the provider's tag/category list.
-
             // Add tag (series only).
             if (!string.IsNullOrWhiteSpace(m.Series))
                 result.Item.AddTag(m.Series);
@@ -175,18 +163,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 !string.Equals(m.Maker?.Trim(), m.Label.Trim(), StringComparison.OrdinalIgnoreCase))
                 result.Item.AddStudio(m.Label);
         }
-
-        // Add director.
-        if (Configuration.EnableDirectors && !string.IsNullOrWhiteSpace(m.Director))
-            result.AddPerson(new PersonInfo
-            {
-                Name = m.Director,
-#if __EMBY__
-                Type = PersonType.Director
-#else
-                Type = PersonKind.Director
-#endif
-            });
 
         // Add actors.
         foreach (var name in m.Actors ?? Enumerable.Empty<string>())
@@ -674,67 +650,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         catch (Exception e)
         {
             Logger.Error("Get actor image error: {0} ({1})", actor.Name, e.Message);
-        }
-    }
-
-    private async Task ConvertToRealActorNames(MovieSearchResult m, CancellationToken cancellationToken)
-    {
-        if (!AvBaseSupportedProviderNames.Contains(m.Provider, StringComparer.OrdinalIgnoreCase)) return;
-
-        try
-        {
-            var searchResults = await ApiClient.SearchMovieAsync(m.Id, AvBase, cancellationToken);
-            if (searchResults?.Any() != true)
-            {
-                Logger.Warn("Movie not found on AVBASE: {0}", m.Id);
-                return;
-            }
-
-            foreach (var result in searchResults)
-            {
-                var similarity = CalculateTitleSimilarity(m, result);
-
-                Logger.Info("Calculate movie title similarity for {0} ({1}) and {2} ({3}): {4:0.00%}",
-                    m.Id, m.Provider, result.Id, result.Provider, similarity);
-
-                if (similarity >= 0.8)
-                {
-                    if (result.Actors?.Any() == true)
-                        m.Actors = result.Actors;
-                    return;
-                }
-            }
-
-            Logger.Warn("No matching movie found on AVBASE for {0}", m.Id);
-        }
-        catch (Exception e)
-        {
-            Logger.Error("Convert to real actor names error: {0} ({1})", m.Number, e.Message);
-        }
-    }
-
-    private static double CalculateTitleSimilarity(MovieSearchResult source, MovieSearchResult target)
-    {
-        var sourceKey = Normalize(source.Number + source.Title);
-        var targetKey = Normalize(target.Number + target.Title);
-
-        if (string.IsNullOrWhiteSpace(sourceKey) || string.IsNullOrWhiteSpace(targetKey))
-            return 0.0;
-
-        var distance = Levenshtein.Distance(sourceKey, targetKey);
-        var avgLength = (sourceKey.Length + targetKey.Length) / 2.0;
-        var similarity = 1.0 - distance / avgLength;
-
-        return Math.Clamp(similarity, 0.0, 1.0);
-
-        string Normalize(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s))
-                return string.Empty;
-
-            s = s.ToLowerInvariant();
-            s = Regex.Replace(s, @"[\s\[\]\(\)【】（）]", "");
-            return s.Trim();
         }
     }
 
