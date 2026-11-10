@@ -579,8 +579,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             {
                 Name = person.Name,
                 Role = person.Role,
-                Type = person.Type,
-                SortOrder = person.SortOrder
+                Type = person.Type
             })
             .ToList();
     }
