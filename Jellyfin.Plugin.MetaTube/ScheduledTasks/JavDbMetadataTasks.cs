@@ -88,6 +88,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             IncludeItemTypes = new[] { BaseItemKind.Movie }
 #endif
         }).ToList();
+        var totalItems = items.Count;
 
         var state = await LoadStateAsync(cancellationToken).ConfigureAwait(false);
         var failedItemIds = state.Failures
@@ -125,6 +126,11 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             .GroupBy(item => item.Id)
             .Select(group => group.First())
             .ToList();
+        var skipped = Math.Max(0, totalItems - itemList.Count);
+        var mode = state.Successes.Count == 0 ? "全量" : "增量";
+        _logger.Info(
+            "JAVDB 元数据任务开始 | 模式={0} | 影片总数={1} | 待处理={2} | 跳过={3} | 成功记录={4} | 失败记录={5}",
+            mode, totalItems, itemList.Count, skipped, state.Successes.Count, state.Failures.Count);
         progress?.Report(0);
 
         var updated = 0;
@@ -141,7 +147,21 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
                 var keyword = GetJavDbKeyword(item);
                 if (string.IsNullOrWhiteSpace(keyword))
+                {
+                    failed++;
+                    const string message = "无法从文件名、标题或原始标题识别番号";
+                    _logger.Warn("JAVDB 元数据失败 | 项目ID={0} | 标题={1} | 错误={2}",
+                        item.Id.ToString("N"), item.Name, message);
+                    RecordOutcome(state, item, string.Empty, false, message);
+                    pendingStateWrites++;
+                    if (pendingStateWrites >= StateSaveBatchSize &&
+                        await TrySaveStateAsync(state, cancellationToken).ConfigureAwait(false))
+                    {
+                        pendingStateWrites = 0;
+                    }
+
                     continue;
+                }
 
                 try
                 {
@@ -156,18 +176,23 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     var genres = BuildGenres(info.Genres);
                     var tags = BuildTags(info.Series);
                     var studios = BuildStudios(info.Maker, info.Label);
+                    var itemUpdated = false;
 
                     if (!HasSameValues(item.Genres, genres) ||
                         !HasSameValues(item.Tags, tags) ||
                         !HasSameValues(item.Studios, studios))
                     {
-                        _logger.Info("Update JAVDB genres, tags and studios for video: {0}", item.Name);
                         await ReplaceMetadataAsync(item, genres, tags, studios, cancellationToken)
                             .ConfigureAwait(false);
                         updated++;
+                        itemUpdated = true;
                     }
 
                     RecordOutcome(state, item, keyword, true, string.Empty);
+                    _logger.Info(
+                        "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 已更新={3}",
+                        keyword, item.Id.ToString("N"), item.Name,
+                        itemUpdated ? "是" : "否");
                     pendingStateWrites++;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -177,8 +202,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 catch (Exception exception)
                 {
                     failed++;
-                    _logger.Error("Update JAVDB genres, tags and studios for video {0} failed: {1}",
-                        item.Name, exception.Message);
+                    _logger.Error(
+                        "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 错误={3}",
+                        keyword, item.Id.ToString("N"), item.Name, exception.Message);
                     RecordOutcome(state, item, keyword, false, exception.Message);
                     pendingStateWrites++;
                 }
@@ -195,8 +221,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             await TrySaveStateAsync(state, CancellationToken.None).ConfigureAwait(false);
         }
 
-        _logger.Info("JAVDB metadata task completed: updated={0}, failed={1}, state={2}",
-            updated, failed, _stateFilePath);
+        _logger.Info(
+            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 跳过={3} | 状态文件={4}",
+            mode, updated, failed, skipped, _stateFilePath);
         progress?.Report(100);
     }
 
@@ -435,16 +462,16 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "补全流派/标签/工作室数据";
+        "从JAVDB替换流派/标签/工作室数据";
 #else
-        "Complete Genres, Tags and Studios";
+        "Replace Genres, Tags and Studios from JAVDB";
 #endif
 
     public override string Description =>
 #if __EMBY__
-        "每次扫描全部影片，并跳过成功记录中的项目；失败记录会自动重试。执行时先清空现有流派、标签和工作室，再写入 JAVDB 数据。成功记录为空或较少时会接近全量更新。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "默认执行全量替换：先清空影片现有的流派、标签和工作室，再写入 JAVDB 数据。已有成功记录时按记录增量跳过，失败记录会自动重试；清空状态记录后，下一次任务会重新执行全量替换。逐条成功和失败结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
-        "Scans all movies on every run and skips items present in the success table; failures are retried automatically. Existing genres, tags and studios are cleared before JAVDB metadata is written. When the success table is empty or sparse, the task behaves close to a full update. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
+        "Runs a full replacement by default: existing genres, tags and studios are cleared before JAVDB metadata is written. Items present in the success state are skipped on later runs, while failures are retried automatically. Clearing the state causes the next run to perform a full replacement. Per-item success and failure results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

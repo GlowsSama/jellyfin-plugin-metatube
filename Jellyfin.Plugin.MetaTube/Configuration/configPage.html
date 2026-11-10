@@ -154,9 +154,9 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableGenreAndTagScraping" is="emby-checkbox" name="chkEnableGenreAndTagScraping" type="checkbox"/>
-                            <span>刮削流派、标签和工作室</span>
+                            <span>从来源刮削流派、标签和工作室数据</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">普通刮削时将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室；关闭后均不写入，可使用 JAVDB 计划任务补全。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，普通刮削会将来源标签写入流派、系列写入标签，并将片商和发行商写入工作室。不同站点的数据往往较混乱，语言和格式难以统一，建议关闭，并定期运行“从JAVDB替换流派/标签/工作室数据”统一整理。</div>
                     </div>
                 </div>
 
@@ -177,6 +177,8 @@
                         <label class="inputLabel inputLabelUnfocused">JAVDB 上次运行：</label>
                         <div class="fieldDescription" id="txtJavDbMetadataLastRun">尚未运行</div>
                     </div>
+
+                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。本页显示状态统计；增量判断使用插件配置目录中的 JSON 状态文件，清空记录后下一次任务会执行全量替换。</div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
