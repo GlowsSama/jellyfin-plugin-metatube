@@ -207,27 +207,27 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
-                            <span>仅获取基础元数据</span>
+                            <span>仅获取基础元数据 (建议关闭)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">基础元数据包括番号、标题、演员和发行时间。开启后普通刮削不会获取流派、标签、工作室、评分或导演；关闭后允许来源补充其它元数据。建议通过“从JAVDB替换其它元数据”计划任务统一整理其它元数据。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启后仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。关闭后普通刮削源可以补充其他元数据；如需格式更统一规整，建议通过计划任务“从JAVDB补充其他元数据”获取。</div>
                     </div>
 
                     <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
                         <summary>
                             <span class="metaTubeProviderFilterSummaryText">
-                                <span class="inputLabel inputLabelUnfocused">其它元数据：</span>
-                                <span id="javDbReplacementFilterSummary">未选择其它元数据</span>
+                                <span class="inputLabel inputLabelUnfocused">从JAVDB补充其他元数据：</span>
+                                <span id="javDbReplacementFilterSummary">未选择其他元数据</span>
                             </span>
                             <span class="metaTubeProviderFilterCount" id="javDbReplacementFilterCount">已选择 0 个</span>
                             <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
                         </summary>
-                        <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="其它元数据"></div>
+                        <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="从JAVDB补充其他元数据"></div>
                     </details>
-                    <div class="fieldDescription">运行“从JAVDB替换其它元数据”时，只替换这里已勾选的项目；未勾选的项目保持不变。</div>
+                    <div class="fieldDescription">对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。</div>
                 </div>
 
                 <div class="verticalSection">
-                    <h2 class="sectionTitle">JAVDB 其它元数据任务</h2>
+                    <h2 class="sectionTitle">JAVDB 其他元数据任务</h2>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
@@ -249,7 +249,7 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">逐条成功与失败结果会写入 Emby 日志，可按“JAVDB 元数据成功”或“JAVDB 元数据失败”搜索。没有成功记录或替换项目发生变化时执行全量替换；否则执行增量补全，只处理新影片和失败记录。任务会先清空已勾选的其它元数据，再请求 JAVDB；请求或写入失败时会自动恢复原数据。</div>
+                    <div class="fieldDescription">运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。如需再次全量运行，请点击下方“删除其它元数据”。</div>
                 </div>
 
                 <div class="verticalSection">
@@ -307,7 +307,7 @@
                             <input id="chkEnableLibraryProviderFilter" is="emby-checkbox" name="chkEnableLibraryProviderFilter" type="checkbox"/>
                             <span>启用媒体库自定义刮削源</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。只要填写了有效规则，“从JAVDB替换其它元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。</div>
+                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。只要填写了有效规则，“从JAVDB补充其他元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。</div>
                     </div>
 
                     <div class="inputContainer">
@@ -712,7 +712,7 @@
             var selectAll = $('#chkJavDbReplacementSelectAll');
 
             $('#javDbReplacementFilterSummary').text(
-                selectedLabels.length ? selectedLabels.join("、") : "未选择其它元数据");
+                selectedLabels.length ? selectedLabels.join("、") : "未选择其他元数据");
             $('#javDbReplacementFilterCount').text("已选择 " + selected.length + " 个");
             selectAll.prop("checked", total > 0 && selected.length === total);
             selectAll.prop("indeterminate", selected.length > 0 && selected.length < total);

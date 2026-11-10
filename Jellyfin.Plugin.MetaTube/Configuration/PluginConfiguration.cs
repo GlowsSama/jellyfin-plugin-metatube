@@ -61,8 +61,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableTrailers { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("仅获取基础元数据")]
-    [Description("基础元数据包括番号、标题、演员和发行时间。开启后普通刮削不会获取流派、标签、工作室、评分或导演；关闭后允许来源补充其它元数据。建议通过“从JAVDB替换其它元数据”计划任务统一整理其它元数据。")]
+    [DisplayName("仅获取基础元数据 (建议关闭)")]
+    [Description("开启后仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。关闭后普通刮削源可以补充其他元数据；如需格式更统一规整，建议通过计划任务“从JAVDB补充其他元数据”获取。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
@@ -116,8 +116,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool ReplaceJavDbReleaseDate { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("其它元数据")]
-    [Description("运行“从JAVDB替换其它元数据”时，只替换这里已勾选的项目；未勾选的项目保持不变。")]
+    [DisplayName("从JAVDB补充其他元数据")]
+    [Description("对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif
@@ -290,7 +290,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("启用媒体库自定义刮削源")]
     [Description(
-        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。只要填写了有效规则，“从JAVDB替换其它元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。")]
+        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。只要填写了有效规则，“从JAVDB补充其他元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。")]
 #endif
     public bool EnableLibraryProviderFilter { get; set; } = false;
 
