@@ -748,16 +748,16 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "从JAVDB替换数据";
+        "从JAVDB替换其它元数据";
 #else
-        "Replace Metadata from JAVDB";
+        "Replace Other Metadata from JAVDB";
 #endif
 
     public override string Description =>
 #if __EMBY__
-        "按插件设置中“JAVDB替换数据”的勾选项替换流派、标签、工作室、演员、导演、评分和发行时间。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "按插件设置中“JAVDB替换其它元数据”的勾选项替换流派、标签、工作室、演员、导演、评分和发行时间。基础元数据通常由普通刮削源提供，本任务只处理勾选的其它元数据。没有成功记录或替换项目发生变化时执行全量处理，否则只处理新影片和失败记录。任务会先清空已勾选项目，再请求 JAVDB 写入新数据；未勾选项目和失败回滚数据保持不变。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
-        "Replaces only the metadata fields selected in the plugin settings. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
+        "Replaces only the other metadata fields selected in the plugin settings. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
