@@ -14,6 +14,12 @@ using Jellyfin.Data.Enums;
 using Microsoft.Extensions.Logging;
 #endif
 
+#if __EMBY__
+using JavDbPremiereDate = System.DateTimeOffset;
+#else
+using JavDbPremiereDate = System.DateTime;
+#endif
+
 namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 
 public abstract class JavDbMetadataTaskBase : IScheduledTask
@@ -182,7 +188,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
                         CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
                         PremiereDate = selection.ReleaseDate
-                            ? info.ReleaseDate.GetValidDateTime()
+                            ? GetPremiereDate(info.ReleaseDate)
                             : original.PremiereDate,
                         ProductionYear = selection.ReleaseDate
                             ? info.ReleaseDate.GetValidYear()
@@ -418,6 +424,16 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         // IPZ-00377 -> IPZ-377; keep at least 3 digits.
         var trimmed = number.TrimStart('0');
         return trimmed.Length >= 3 ? trimmed : trimmed.PadLeft(3, '0');
+    }
+
+    private static JavDbPremiereDate? GetPremiereDate(DateTime releaseDate)
+    {
+        var validDate = releaseDate.GetValidDateTime();
+#if __EMBY__
+        return validDate.HasValue ? new DateTimeOffset(validDate.Value) : null;
+#else
+        return validDate;
+#endif
     }
 
     private JavDbMetadataSnapshot CaptureSnapshot(BaseItem item, bool includePeople)
@@ -704,7 +720,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
         public float? CommunityRating { get; init; }
 
-        public DateTime? PremiereDate { get; init; }
+        public JavDbPremiereDate? PremiereDate { get; init; }
 
         public int? ProductionYear { get; init; }
 
