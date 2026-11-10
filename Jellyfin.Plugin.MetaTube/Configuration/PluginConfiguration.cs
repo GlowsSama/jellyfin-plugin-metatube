@@ -69,44 +69,100 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("流派(标签)")]
     [Description("使用 JAVDB 的标签替换影片流派。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbGenres { get; set; } = true;
 
 #if __EMBY__
     [DisplayName("标签(系列)")]
     [Description("使用 JAVDB 的系列替换影片标签。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbTags { get; set; } = true;
 
 #if __EMBY__
     [DisplayName("工作室(厂牌,发行商)")]
     [Description("使用 JAVDB 的片商和发行商替换影片工作室。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbStudios { get; set; } = true;
 
 #if __EMBY__
     [DisplayName("演员真实信息")]
     [Description("使用 JAVDB 的演员列表替换影片演员，同时保留导演等其他人员信息。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbActors { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("导演信息")]
     [Description("使用 JAVDB 的导演列表替换影片导演，同时保留演员等其他人员信息。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbDirectors { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("评分")]
     [Description("使用 JAVDB 的公众评分替换影片评分。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbRating { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("发行时间")]
     [Description("使用 JAVDB 的发行日期替换影片首映日期和发行年份。")]
+    [Browsable(false)]
 #endif
     public bool ReplaceJavDbReleaseDate { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("其它元数据")]
+    [Description("运行“从JAVDB替换其它元数据”时，只替换这里已勾选的项目；未勾选的项目保持不变。")]
+    [EditMultilSelect]
+    [SelectItemsSource(nameof(JavDbReplacementOptions))]
+#endif
+    public string RawJavDbReplacementFilter
+    {
+        get
+        {
+            var selected = new List<string>();
+            if (ReplaceJavDbGenres) selected.Add("genres");
+            if (ReplaceJavDbTags) selected.Add("tags");
+            if (ReplaceJavDbStudios) selected.Add("studios");
+            if (ReplaceJavDbActors) selected.Add("actors");
+            if (ReplaceJavDbDirectors) selected.Add("directors");
+            if (ReplaceJavDbRating) selected.Add("rating");
+            if (ReplaceJavDbReleaseDate) selected.Add("releaseDate");
+            return string.Join(',', selected);
+        }
+        set
+        {
+            var selected = new HashSet<string>(
+                (value ?? string.Empty).Split(',').Select(item => item.Trim()).Where(item => item.Any()),
+                StringComparer.OrdinalIgnoreCase);
+            ReplaceJavDbGenres = selected.Contains("genres");
+            ReplaceJavDbTags = selected.Contains("tags");
+            ReplaceJavDbStudios = selected.Contains("studios");
+            ReplaceJavDbActors = selected.Contains("actors");
+            ReplaceJavDbDirectors = selected.Contains("directors");
+            ReplaceJavDbRating = selected.Contains("rating");
+            ReplaceJavDbReleaseDate = selected.Contains("releaseDate");
+        }
+    }
+
+#if __EMBY__
+    [Browsable(false)]
+    public List<EditorSelectOption> JavDbReplacementOptions => new()
+    {
+        new EditorSelectOption { Name = "流派(标签)", Value = "genres", IsEnabled = true },
+        new EditorSelectOption { Name = "标签(系列)", Value = "tags", IsEnabled = true },
+        new EditorSelectOption { Name = "工作室(厂牌,发行商)", Value = "studios", IsEnabled = true },
+        new EditorSelectOption { Name = "演员名字", Value = "actors", IsEnabled = true },
+        new EditorSelectOption { Name = "导演信息", Value = "directors", IsEnabled = true },
+        new EditorSelectOption { Name = "评分", Value = "rating", IsEnabled = true },
+        new EditorSelectOption { Name = "发行时间", Value = "releaseDate", IsEnabled = true }
+    };
+#endif
 
 #if __EMBY__
     [DisplayName("JAVDB 成功记录")]
