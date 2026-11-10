@@ -88,55 +88,21 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             IncludeItemTypes = new[] { BaseItemKind.Movie }
 #endif
         }).ToList();
-        var totalItems = items.Count;
 
         var state = await LoadStateAsync(cancellationToken).ConfigureAwait(false);
-        var failedItemIds = state.Failures
-            .Select(record => record.ItemId)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var failedKeywords = state.Failures
-            .Select(record => record.Keyword)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var successfulItemIds = state.Successes
-            .Select(record => record.ItemId)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var successfulKeywords = state.Successes
-            .Select(record => record.Keyword)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        items = items
-            .Where(item =>
-            {
-                var itemId = item.Id.ToString("N");
-                var keyword = GetJavDbKeyword(item);
-                var isFailed = failedItemIds.Contains(itemId) ||
-                               (!string.IsNullOrWhiteSpace(keyword) && failedKeywords.Contains(keyword));
-                var isSuccessful = successfulItemIds.Contains(itemId) ||
-                                   (!string.IsNullOrWhiteSpace(keyword) && successfulKeywords.Contains(keyword));
-
-                return isFailed || !isSuccessful;
-            })
-            .ToList();
-
-        var itemList = items
-            .GroupBy(item => item.Id)
-            .Select(group => group.First())
-            .ToList();
-        var skipped = Math.Max(0, totalItems - itemList.Count);
-        var mode = state.Successes.Count == 0 ? "全量" : "增量";
+        var plan = JavDbMetadataSyncPlanner.Create(items, state, GetJavDbKeyword);
+        var itemList = plan.PendingItems;
         _logger.Info(
-            "JAVDB 元数据任务开始 | 模式={0} | 影片总数={1} | 待处理={2} | 跳过={3} | 成功记录={4} | 失败记录={5}",
-            mode, totalItems, itemList.Count, skipped, state.Successes.Count, state.Failures.Count);
+            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 影片总数={2} | 待处理={3} | 跳过={4} | 成功记录={5} | 失败记录={6}",
+            plan.ModeLabel, plan.ModeReason, plan.TotalItemCount, itemList.Count, plan.SkippedItemCount,
+            state.Successes.Count, state.Failures.Count);
         progress?.Report(0);
 
         var updated = 0;
         var failed = 0;
         var pendingStateWrites = 0;
         state.LastRunAtUtc = DateTimeOffset.UtcNow;
+        state.LastRunMode = plan.Mode.ToString();
         try
         {
             for (var index = 0; index < itemList.Count; index++)
@@ -149,7 +115,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 if (string.IsNullOrWhiteSpace(keyword))
                 {
                     failed++;
-                    const string message = "无法从文件名、标题或原始标题识别番号";
+                    const string message = "无法从标题、原始标题或文件名识别番号";
                     _logger.Warn("JAVDB 元数据失败 | 项目ID={0} | 标题={1} | 错误={2}",
                         item.Id.ToString("N"), item.Name, message);
                     RecordOutcome(state, item, string.Empty, false, message);
@@ -163,6 +129,10 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     continue;
                 }
 
+                var originalGenres = item.Genres;
+                var originalTags = item.Tags;
+                var originalStudios = item.Studios;
+                var metadataCleared = true;
                 try
                 {
                     await ReplaceMetadataAsync(
@@ -197,10 +167,22 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    if (metadataCleared)
+                    {
+                        await TryRestoreMetadataAsync(item, originalGenres, originalTags, originalStudios)
+                            .ConfigureAwait(false);
+                    }
+
                     throw;
                 }
                 catch (Exception exception)
                 {
+                    if (metadataCleared)
+                    {
+                        await TryRestoreMetadataAsync(item, originalGenres, originalTags, originalStudios)
+                            .ConfigureAwait(false);
+                    }
+
                     failed++;
                     _logger.Error(
                         "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 错误={3}",
@@ -223,7 +205,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
         _logger.Info(
             "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 跳过={3} | 状态文件={4}",
-            mode, updated, failed, skipped, _stateFilePath);
+            plan.ModeLabel, updated, failed, plan.SkippedItemCount, _stateFilePath);
         progress?.Report(100);
     }
 
@@ -329,16 +311,16 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
     internal static string GetJavDbKeyword(BaseItem item)
     {
-        // Only JAVDB ids are valid movie numbers. Sources such as DMM/FANZA use padded ids
-        // (e.g. ipz00377) that do not map directly to the real number (IPZ-377).
+        // JAVDB provider ids are already normalized. DMM/FANZA use padded ids such as
+        // ipz00959, so prefer the title before falling back to the file name.
         var pid = item.GetPid(Plugin.ProviderId);
         if (pid.Provider.Equals(JavDbProvider, StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(pid.Id))
         {
-            return pid.Id;
+            return pid.Id.Trim();
         }
 
-        foreach (var value in new[] { item.FileNameWithoutExtension, item.Name, item.OriginalTitle })
+        foreach (var value in new[] { item.Name, item.OriginalTitle, item.FileNameWithoutExtension })
         {
             var keyword = ExtractMovieNumber(value);
             if (!string.IsNullOrWhiteSpace(keyword))
@@ -346,13 +328,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         return string.Empty;
-    }
-
-    private static string TrimNumberPadding(string number)
-    {
-        // IPZ-00377 -> IPZ-377; keep at least 3 digits.
-        var trimmed = number.TrimStart('0');
-        return trimmed.Length >= 3 ? trimmed : trimmed.PadLeft(3, '0');
     }
 
     internal static string ExtractMovieNumber(string value)
@@ -392,6 +367,13 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return string.Empty;
     }
 
+    private static string TrimNumberPadding(string number)
+    {
+        // IPZ-00377 -> IPZ-377; keep at least 3 digits.
+        var trimmed = number.TrimStart('0');
+        return trimmed.Length >= 3 ? trimmed : trimmed.PadLeft(3, '0');
+    }
+
     private async Task ReplaceMetadataAsync(
         BaseItem item,
         string[] genres,
@@ -399,17 +381,49 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         string[] studios,
         CancellationToken cancellationToken)
     {
-        item.Genres = genres;
-        item.Tags = tags;
-        item.Studios = studios;
+        var originalGenres = item.Genres;
+        var originalTags = item.Tags;
+        var originalStudios = item.Studios;
+        try
+        {
+            item.Genres = genres;
+            item.Tags = tags;
+            item.Studios = studios;
 #if __EMBY__
-        _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
-        await Task.CompletedTask.ConfigureAwait(false);
+            _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
+            await Task.CompletedTask.ConfigureAwait(false);
 #else
-        await _libraryManager
-            .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
-            .ConfigureAwait(false);
+            await _libraryManager
+                .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
+                .ConfigureAwait(false);
 #endif
+        }
+        catch
+        {
+            item.Genres = originalGenres;
+            item.Tags = originalTags;
+            item.Studios = originalStudios;
+            throw;
+        }
+    }
+
+    private async Task TryRestoreMetadataAsync(
+        BaseItem item,
+        string[] genres,
+        string[] tags,
+        string[] studios)
+    {
+        try
+        {
+            await ReplaceMetadataAsync(item, genres, tags, studios, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(
+                "JAVDB 元数据恢复失败 | 项目ID={0} | 标题={1} | 错误={2}",
+                item.Id.ToString("N"), item.Name, exception.Message);
+        }
     }
 
     private static string[] BuildGenres(IEnumerable<string> javDbGenres)
@@ -469,9 +483,9 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "默认执行全量替换：先清空影片现有的流派、标签和工作室，再写入 JAVDB 数据。已有成功记录时按记录增量跳过，失败记录会自动重试；清空状态记录后，下一次任务会重新执行全量替换。逐条成功和失败结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
+        "默认根据状态记录自动选择模式：没有成功记录时执行全量替换；有成功记录时执行增量补全，只处理新影片和失败记录。任务会先清空影片现有的流派、标签和工作室，再请求 JAVDB 写入新数据；请求或写入失败时会自动恢复原数据。逐条结果会写入 Emby 日志。请求间隔至少 10 秒，主站拒绝请求时自动切换备用站点。";
 #else
-        "Runs a full replacement by default: existing genres, tags and studios are cleared before JAVDB metadata is written. Items present in the success state are skipped on later runs, while failures are retried automatically. Clearing the state causes the next run to perform a full replacement. Per-item success and failure results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
+        "Uses the saved state to choose the mode automatically: a full replacement runs when there are no successful records, while later runs process new items and retry failures. Existing genres, tags and studios are cleared before JAVDB is requested, and the original values are restored if the request or update fails. Per-item results are written to the server log. Requests are spaced by at least 10 seconds and fall back to configured backup domains when needed.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

@@ -105,6 +105,13 @@ public class PluginConfiguration : BasePluginConfiguration
 #endif
     public string JavDbMetadataLastRun => FormatJavDbMetadataLastRun(GetJavDbMetadataSummary().LastRunAtUtc);
 
+#if __EMBY__
+    [DisplayName("JAVDB 上次模式")]
+    [Description("只读统计。显示上一次任务执行的是全量替换还是增量补全。")]
+    [ReadOnly(true)]
+#endif
+    public string JavDbMetadataLastMode => FormatJavDbMetadataLastMode(GetJavDbMetadataSummary().LastRunMode);
+
     private bool _clearJavDbMetadataRecords;
 
 #if __EMBY__
@@ -159,6 +166,16 @@ public class PluginConfiguration : BasePluginConfiguration
         return lastRunAtUtc == default
             ? "尚未运行"
             : lastRunAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    private static string FormatJavDbMetadataLastMode(string lastRunMode)
+    {
+        return lastRunMode switch
+        {
+            nameof(JavDbMetadataSyncMode.Full) => "全量替换",
+            nameof(JavDbMetadataSyncMode.Incremental) => "增量补全",
+            _ => "尚未运行"
+        };
     }
 
 #if __EMBY__
