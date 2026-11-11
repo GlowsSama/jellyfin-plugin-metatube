@@ -580,7 +580,7 @@ public static class ApiClient
         }
 
         // Note: data field must not be null if there are no errors.
-        if (apiResponse?.Data == null)
+        if (apiResponse is null || apiResponse.Data is null)
             throw new Exception("Response data field is null");
 
         return apiResponse.Data;
