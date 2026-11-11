@@ -189,7 +189,10 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool JavDbMetadataFailureEditorDirty { get; set; } = false;
 
 #if __EMBY__
-    [Browsable(false)]
+    [DisplayName("JAVDB 失败任务")]
+    [Description(
+        "每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除。")]
+    [EditMultiline(12)]
 #endif
     public string JavDbMetadataFailureTaskText
     {
@@ -199,6 +202,13 @@ public class PluginConfiguration : BasePluginConfiguration
                 return JavDbMetadataFailureEditor ?? string.Empty;
 
             return JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
+        }
+        set
+        {
+            var text = value ?? string.Empty;
+            JavDbMetadataFailureEditor = text;
+            var currentText = JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
+            JavDbMetadataFailureEditorDirty = !string.Equals(text, currentText, StringComparison.Ordinal);
         }
     }
 
