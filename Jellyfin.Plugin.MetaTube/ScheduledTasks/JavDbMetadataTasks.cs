@@ -1,5 +1,7 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.MetaTube.Extensions;
+using Jellyfin.Plugin.MetaTube.Metadata;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -26,22 +28,30 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 {
     private const string JavDbProvider = "JavDB";
     private const int StateSaveBatchSize = 25;
+    private const int MaxJavDbKeywordCandidates = 8;
     private static readonly TimeSpan JavDbTaskInterval = TimeSpan.FromSeconds(10);
     private static readonly Regex Fc2NumberPattern = new(
         @"(?i)(?<![A-Z0-9])FC2(?:[-_\s]?PPV)?[-_\s]?(?<number>\d{5,})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex SpecialNumberPattern = new(
+        @"(?i)(?<![A-Z0-9])(?<number>(?:HEYZO[-_\s]\d{4,6}|HEYDOUGA[-_\s]\d{4,6}[-_]\d{1,6}|MKBD[-_\s]?S\d{1,5}|MXNB[-_\s]\d{1,6}[A-Z]|\d{6}[-_]\d{3}))(?![A-Z0-9])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex SeparatedNumberPattern = new(
-        @"(?i)(?<![A-Z0-9])(?<prefix>[A-Z0-9]{2,12})[-_\s](?<number>\d{2,6})(?!\d)",
+        @"(?i)(?<![A-Z0-9])(?<prefix>[A-Z0-9]{2,12})[-_\s](?<number>\d{2,6})(?![A-Z0-9])",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex CompactNumberPattern = new(
-        @"(?i)(?<![A-Z0-9])(?<prefix>[A-Z]{2,10})(?<number>\d{2,5})(?!\d)",
+        @"(?i)(?<![A-Z0-9])(?<prefix>[A-Z]{2,10})(?<number>\d{2,5})(?![A-Z0-9])",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex NumericDateNumberPattern = new(
-        @"(?<!\d)(?<number>\d{6}[-_]\d{3})(?!\d)",
+    private static readonly Regex DetailIdPattern = new(
+        @"^[A-Za-z0-9]{4,20}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex PersonNameSeparatorPattern = new(
         @"\s*[,，、;/；|｜]\s*",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly HashSet<string> IgnoredNumberPrefixes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "KIRARI"
+    };
 
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger _logger;
@@ -141,6 +151,28 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         var pendingStateWrites = 0;
         state.LastRunAtUtc = DateTimeOffset.UtcNow;
         state.LastRunMode = plan.Mode.ToString();
+        DateTimeOffset? lastJavDbRequestCompletedAt = null;
+
+        async Task<T> SendJavDbRequestAsync<T>(Func<Task<T>> request)
+        {
+            if (lastJavDbRequestCompletedAt.HasValue)
+            {
+                var elapsed = DateTimeOffset.UtcNow - lastJavDbRequestCompletedAt.Value;
+                var remaining = JavDbTaskInterval - elapsed;
+                if (remaining > TimeSpan.Zero)
+                    await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                return await request().ConfigureAwait(false);
+            }
+            finally
+            {
+                lastJavDbRequestCompletedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
         try
         {
             for (var index = 0; index < itemList.Count; index++)
@@ -149,17 +181,17 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 var item = itemList[index];
                 progress?.Report(itemList.Count == 0 ? 100 : (double)index / itemList.Count * 100);
 
-                var keyword = GetJavDbKeyword(item);
-                if (string.IsNullOrWhiteSpace(keyword))
+                var keywords = GetJavDbKeywords(item);
+                if (keywords.Count == 0)
                 {
                     _logger.Debug("JAVDB 元数据跳过 | 项目ID={0} | 标题={1} | 原因=无法识别番号",
                         item.Id.ToString("N"), item.Name);
                     continue;
                 }
 
+                var keyword = keywords[0];
                 var original = CaptureSnapshot(item, selection.HasPeople);
                 var metadataCleared = false;
-                var javDbRequested = false;
                 try
                 {
                     var cleared = new JavDbMetadataSnapshot
@@ -176,44 +208,139 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     await ApplyMetadataAsync(item, cleared, selection, cancellationToken)
                         .ConfigureAwait(false);
 
-                    javDbRequested = true;
-                    var info = await ApiClient.GetMovieInfoAsync(JavDbProvider, keyword, false, cancellationToken)
-                        .ConfigureAwait(false);
-                    var desired = new JavDbMetadataSnapshot
-                    {
-                        Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
-                        Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
-                        Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
-                        CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
-                        PremiereDate = selection.ReleaseDate
-                            ? GetPremiereDate(info.ReleaseDate)
-                            : original.PremiereDate,
-                        ProductionYear = selection.ReleaseDate
-                            ? info.ReleaseDate.GetValidYear()
-                            : original.ProductionYear,
-                        People = selection.HasPeople
-                            ? BuildPeopleWithJavDbSelections(original.People, info.Actors, info.Director, selection)
-                            : null
-                    };
-                    var current = CaptureSnapshot(item, selection.HasPeople);
-                    var needsApply = HasChanges(current, desired, selection);
-                    var itemUpdated = HasChanges(original, desired, selection);
+                    _logger.Info(
+                        "JAVDB 番号候选 | 项目ID={0} | 标题={1} | 候选={2}",
+                        item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
 
-                    if (needsApply)
+                    MovieInfo info = null;
+                    var matchedKeyword = keyword;
+                    foreach (var candidate in keywords)
                     {
-                        await ApplyMetadataAsync(item, desired, selection, cancellationToken)
-                            .ConfigureAwait(false);
+                        _logger.Info("JAVDB 候选请求 | 项目ID={0} | 番号={1}",
+                            item.Id.ToString("N"), candidate);
+                        try
+                        {
+                            info = await SendJavDbRequestAsync(() =>
+                                    ApiClient.GetMovieInfoAsync(JavDbProvider, candidate, false, cancellationToken))
+                                .ConfigureAwait(false);
+                            matchedKeyword = candidate;
+                            _logger.Info("JAVDB 候选命中 | 项目ID={0} | 番号={1} | 结果ID={2}",
+                                item.Id.ToString("N"), candidate, info.Id);
+                            break;
+                        }
+                        catch (ApiRequestException exception) when (exception.IsNotFound)
+                        {
+                            _logger.Info("JAVDB 候选未找到 | 项目ID={0} | 番号={1} | 继续下一候选",
+                                item.Id.ToString("N"), candidate);
+                        }
                     }
 
-                    if (itemUpdated)
-                        updated++;
+                    if (info == null)
+                    {
+                        var title = GetJavDbTitle(item);
+                        if (!string.IsNullOrWhiteSpace(title))
+                        {
+                            _logger.Info("JAVDB 标题兜底开始 | 项目ID={0} | 标题={1}",
+                                item.Id.ToString("N"), title);
+                            List<MovieSearchResult> titleResults;
+                            try
+                            {
+                                titleResults = await SendJavDbRequestAsync(() =>
+                                        ApiClient.SearchMovieAsync(title, JavDbProvider, false, cancellationToken))
+                                    .ConfigureAwait(false);
+                            }
+                            catch (ApiRequestException exception) when (exception.IsNotFound)
+                            {
+                                titleResults = new List<MovieSearchResult>();
+                            }
 
-                    RecordOutcome(state, item, keyword, true, string.Empty);
-                    _logger.Info(
-                        "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 替换项目={3} | 已更新={4}",
-                        keyword, item.Id.ToString("N"), item.Name, selection.Signature,
-                        itemUpdated ? "是" : "否");
-                    pendingStateWrites++;
+                            var titleMatch = SelectConfidentTitleMatch(title, titleResults);
+                            if (titleMatch != null)
+                            {
+                                var titleMatchId = !string.IsNullOrWhiteSpace(titleMatch.Id)
+                                    ? titleMatch.Id
+                                    : titleMatch.Number;
+                                _logger.Info(
+                                    "JAVDB 标题兜底命中 | 项目ID={0} | 标题={1} | 结果ID={2} | 番号={3}",
+                                    item.Id.ToString("N"), title, titleMatchId, titleMatch.Number);
+                                try
+                                {
+                                    info = await SendJavDbRequestAsync(() =>
+                                            ApiClient.GetMovieInfoAsync(JavDbProvider, titleMatchId, false,
+                                                cancellationToken))
+                                        .ConfigureAwait(false);
+                                    matchedKeyword = string.IsNullOrWhiteSpace(titleMatch.Number)
+                                        ? titleMatchId
+                                        : titleMatch.Number;
+                                }
+                                catch (ApiRequestException exception) when (exception.IsNotFound)
+                                {
+                                    _logger.Info("JAVDB 标题兜底结果已失效 | 项目ID={0} | 结果ID={1}",
+                                        item.Id.ToString("N"), titleMatchId);
+                                }
+                            }
+                            else
+                            {
+                                _logger.Info(
+                                    "JAVDB 标题兜底未采用 | 项目ID={0} | 标题={1} | 原因=无唯一高置信度结果 | 结果数={2}",
+                                    item.Id.ToString("N"), title, titleResults.Count);
+                            }
+                        }
+                    }
+
+                    if (info == null)
+                    {
+                        await TryRestoreMetadataAsync(item, original, selection).ConfigureAwait(false);
+                        metadataCleared = false;
+                        failed++;
+                        var failureMessage =
+                            $"not_found: JAVDB 未找到候选 [{string.Join(", ", keywords)}]";
+                        _logger.Warn(
+                            "JAVDB 元数据未找到 | 项目ID={0} | 标题={1} | 候选={2} | 已恢复原元数据",
+                            item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
+                        RecordOutcome(state, item, keyword, false, "not_found", failureMessage);
+                        pendingStateWrites++;
+                    }
+                    else
+                    {
+                        keyword = matchedKeyword;
+                        var desired = new JavDbMetadataSnapshot
+                        {
+                            Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
+                            Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
+                            Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
+                            CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
+                            PremiereDate = selection.ReleaseDate
+                                ? GetPremiereDate(info.ReleaseDate)
+                                : original.PremiereDate,
+                            ProductionYear = selection.ReleaseDate
+                                ? info.ReleaseDate.GetValidYear()
+                                : original.ProductionYear,
+                            People = selection.HasPeople
+                                ? BuildPeopleWithJavDbSelections(original.People, info.Actors, info.Director,
+                                    selection)
+                                : null
+                        };
+                        var current = CaptureSnapshot(item, selection.HasPeople);
+                        var needsApply = HasChanges(current, desired, selection);
+                        var itemUpdated = HasChanges(original, desired, selection);
+
+                        if (needsApply)
+                        {
+                            await ApplyMetadataAsync(item, desired, selection, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+
+                        if (itemUpdated)
+                            updated++;
+
+                        RecordOutcome(state, item, keyword, true, string.Empty, string.Empty);
+                        _logger.Info(
+                            "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 替换项目={3} | 已更新={4}",
+                            keyword, item.Id.ToString("N"), item.Name, selection.Signature,
+                            itemUpdated ? "是" : "否");
+                        pendingStateWrites++;
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -234,10 +361,12 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     }
 
                     failed++;
+                    var failureKind = ClassifyJavDbFailure(exception);
                     _logger.Error(
-                        "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 错误={3}",
-                        keyword, item.Id.ToString("N"), item.Name, exception.Message);
-                    RecordOutcome(state, item, keyword, false, exception.Message);
+                        "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 类型={3} | 错误={4}",
+                        keyword, item.Id.ToString("N"), item.Name, failureKind, exception.Message);
+                    RecordOutcome(state, item, keyword, false, failureKind,
+                        $"{failureKind}: {exception.Message}");
                     pendingStateWrites++;
                 }
 
@@ -245,11 +374,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 {
                     if (await TrySaveStateAsync(state, cancellationToken).ConfigureAwait(false))
                         pendingStateWrites = 0;
-                }
-
-                if (javDbRequested && index + 1 < itemList.Count)
-                {
-                    await Task.Delay(JavDbTaskInterval, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -285,6 +409,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         BaseItem item,
         string keyword,
         bool success,
+        string failureKind,
         string message)
     {
         var now = DateTimeOffset.UtcNow;
@@ -298,6 +423,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             Name = item.Name,
             Keyword = keyword,
             Message = success ? string.Empty : message ?? string.Empty,
+            FailureKind = success ? string.Empty : failureKind ?? string.Empty,
             UpdatedAtUtc = now
         };
         if (success)
@@ -347,67 +473,347 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
     internal static string GetJavDbKeyword(BaseItem item)
     {
-        // JAVDB provider ids are already normalized. DMM/FANZA use padded ids such as
-        // ipz00959, so prefer the title before falling back to the file name.
-        var pid = item.GetPid(Plugin.ProviderId);
-        if (pid.Provider.Equals(JavDbProvider, StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(pid.Id))
-        {
-            return pid.Id.Trim();
-        }
+        return GetJavDbKeywords(item).FirstOrDefault() ?? string.Empty;
+    }
 
+    internal static List<string> GetJavDbKeywords(BaseItem item)
+    {
+        var candidates = new List<string>();
         foreach (var value in new[] { item.Name, item.OriginalTitle, item.FileNameWithoutExtension })
         {
-            var keyword = ExtractMovieNumber(value);
-            if (!string.IsNullOrWhiteSpace(keyword))
-                return keyword;
+            foreach (var keyword in ExtractMovieNumbers(value))
+                AddCandidate(candidates, keyword);
         }
 
-        return string.Empty;
+        var pid = item.GetPid(Plugin.ProviderId);
+        var providerId = pid.Id?.Trim() ?? string.Empty;
+        if (DetailIdPattern.IsMatch(providerId) &&
+            !IgnoredNumberPrefixes.Any(prefix =>
+                providerId.StartsWith($"{prefix}-", StringComparison.OrdinalIgnoreCase)))
+        {
+            AddCandidate(candidates, providerId);
+        }
+
+        return candidates.Take(MaxJavDbKeywordCandidates).ToList();
     }
 
     internal static string ExtractMovieNumber(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
+        return ExtractMovieNumbers(value).FirstOrDefault() ?? string.Empty;
+    }
 
+    internal static List<string> ExtractMovieNumbers(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return new List<string>();
+
+        var candidates = new List<string>();
         var fc2Match = Fc2NumberPattern.Match(value);
         if (fc2Match.Success)
-            return $"FC2-{fc2Match.Groups["number"].Value}";
+            AddNumberVariants(candidates, $"FC2-{fc2Match.Groups["number"].Value}");
 
-        var numericDateMatch = NumericDateNumberPattern.Match(value);
-        if (numericDateMatch.Success)
-            return numericDateMatch.Groups["number"].Value.Replace('_', '-');
+        var specialMatches = SpecialNumberPattern.Matches(value).Cast<Match>().ToList();
+        foreach (var specialMatch in specialMatches)
+        {
+            var raw = specialMatch.Groups["number"].Value;
+            AddNumberVariants(candidates, raw, Regex.IsMatch(raw, @"^\d{6}[-_]\d{3}$"));
+        }
 
         foreach (Match separatedMatch in SeparatedNumberPattern.Matches(value))
         {
-            var prefix = separatedMatch.Groups["prefix"].Value.ToUpperInvariant();
-            var number = separatedMatch.Groups["number"].Value;
-            if (!prefix.All(char.IsDigit) || (prefix.Length == 6 && number.Length == 3))
+            if (specialMatches.Any(specialMatch =>
+                    separatedMatch.Index >= specialMatch.Index &&
+                    separatedMatch.Index + separatedMatch.Length <= specialMatch.Index + specialMatch.Length))
             {
-                if (!prefix.All(char.IsDigit) && number.Length > 3)
-                    number = TrimNumberPadding(number);
-                return $"{prefix}-{number}";
+                continue;
             }
+
+            var prefix = separatedMatch.Groups["prefix"].Value.ToUpperInvariant();
+            if (IgnoredNumberPrefixes.Contains(prefix))
+                continue;
+
+            var number = separatedMatch.Groups["number"].Value;
+            AddNumberVariants(candidates, $"{prefix}-{number}");
         }
 
-        var compactMatch = CompactNumberPattern.Match(value);
-        if (compactMatch.Success)
+        foreach (Match compactMatch in CompactNumberPattern.Matches(value))
         {
+            var prefix = compactMatch.Groups["prefix"].Value.ToUpperInvariant();
+            if (IgnoredNumberPrefixes.Contains(prefix))
+                continue;
+
             var compactNumber = compactMatch.Groups["number"].Value;
-            if (compactNumber.Length > 3)
-                compactNumber = TrimNumberPadding(compactNumber);
-            return $"{compactMatch.Groups["prefix"].Value.ToUpperInvariant()}-{compactNumber}";
+            AddNumberVariants(candidates, $"{prefix}-{compactNumber}");
+        }
+
+        return candidates;
+    }
+
+    private static void AddNumberVariants(List<string> candidates, string raw, bool isDateNumber = false)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return;
+
+        var normalized = Regex.Replace(raw.Trim().ToUpperInvariant(), @"\s+", "-");
+        normalized = isDateNumber
+            ? Regex.Replace(normalized, @"[^0-9_-]", string.Empty)
+            : Regex.Replace(normalized, @"[^A-Z0-9_-]", string.Empty).Replace('_', '-');
+        normalized = Regex.Replace(normalized, @"-{2,}", "-").Trim('-', '_');
+        AddCandidate(candidates, normalized);
+
+        if (isDateNumber)
+        {
+            AddCandidate(candidates, normalized.Replace('_', '-'));
+            return;
+        }
+
+        var match = Regex.Match(normalized,
+            @"^(?<prefix>[A-Z0-9]{2,12})-(?<number>\d{2,6})(?<suffix>[A-Z]?)$");
+        if (!match.Success || match.Groups["prefix"].Value == "FC2")
+            return;
+
+        var number = match.Groups["number"].Value;
+        if (number.Length <= 3)
+            return;
+
+        var trimmed = number.TrimStart('0');
+        if (trimmed.Length == 0)
+            trimmed = "0";
+        if (!string.Equals(trimmed, number, StringComparison.Ordinal))
+        {
+            AddCandidate(candidates,
+                $"{match.Groups["prefix"].Value}-{trimmed}{match.Groups["suffix"].Value}");
+        }
+    }
+
+    private static void AddCandidate(List<string> candidates, string candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return;
+        if (candidates.Any(value => string.Equals(value, candidate, StringComparison.OrdinalIgnoreCase)))
+            return;
+        candidates.Add(candidate);
+    }
+
+    private static string GetJavDbTitle(BaseItem item)
+    {
+        foreach (var value in new[] { item.Name, item.OriginalTitle, item.FileNameWithoutExtension })
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
         }
 
         return string.Empty;
     }
 
-    private static string TrimNumberPadding(string number)
+    private static MovieSearchResult SelectConfidentTitleMatch(string title,
+        IEnumerable<MovieSearchResult> searchResults)
     {
-        // IPZ-00377 -> IPZ-377; keep at least 3 digits.
-        var trimmed = number.TrimStart('0');
-        return trimmed.Length >= 3 ? trimmed : trimmed.PadLeft(3, '0');
+        var queryNumbers = ExtractMovieNumbers(title);
+        var scored = (searchResults ?? Enumerable.Empty<MovieSearchResult>())
+            .Where(result => result != null)
+            .Select(result => new
+            {
+                Result = result,
+                Score = GetTitleSimilarity(title, result.Title),
+                NumberMatches = queryNumbers.Any(number => AreEquivalentMovieNumbers(number, result.Number))
+            })
+            .OrderByDescending(value => value.Score)
+            .ThenBy(value => value.Result.Id, StringComparer.Ordinal)
+            .ToList();
+
+        if (scored.Count == 0)
+            return null;
+
+        var best = scored[0];
+        if (best.Score < 0.72)
+            return null;
+        if (!best.NumberMatches && best.Score < 0.92)
+            return null;
+
+        var runnerUp = scored.Skip(1)
+            .FirstOrDefault(value => !AreEquivalentMovieNumbers(best.Result.Number, value.Result.Number));
+        if (runnerUp != null && best.Score - runnerUp.Score < 0.12)
+            return null;
+
+        return best.Result;
+    }
+
+    private static double GetTitleSimilarity(string left, string right)
+    {
+        var leftKey = NormalizeTitleKey(left);
+        var rightKey = NormalizeTitleKey(right);
+        if (leftKey.Length == 0 || rightKey.Length == 0)
+            return 0;
+        if (string.Equals(leftKey, rightKey, StringComparison.Ordinal))
+            return 1;
+        if (Math.Min(leftKey.Length, rightKey.Length) >= 8 &&
+            (leftKey.Contains(rightKey, StringComparison.Ordinal) ||
+             rightKey.Contains(leftKey, StringComparison.Ordinal)))
+        {
+            return 0.94;
+        }
+
+        var leftBigrams = GetTitleBigrams(leftKey);
+        var rightBigrams = GetTitleBigrams(rightKey);
+        if (leftBigrams.Count == 0 || rightBigrams.Count == 0)
+            return 0;
+
+        var common = leftBigrams.Count(rightBigrams.Contains);
+        return 2d * common / (leftBigrams.Count + rightBigrams.Count);
+    }
+
+    private static string NormalizeTitleKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var builder = new System.Text.StringBuilder(value.Length);
+        foreach (var character in value.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(character))
+                builder.Append(character);
+        }
+
+        return builder.ToString();
+    }
+
+    private static HashSet<string> GetTitleBigrams(string value)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index + 1 < value.Length; index++)
+            result.Add(value.Substring(index, 2));
+        return result;
+    }
+
+    private static bool AreEquivalentMovieNumbers(string left, string right)
+    {
+        var leftKey = NormalizeNumberKey(left);
+        var rightKey = NormalizeNumberKey(right);
+        if (leftKey.Length == 0 || rightKey.Length == 0)
+            return false;
+        if (string.Equals(leftKey, rightKey, StringComparison.Ordinal))
+            return true;
+        if (string.Equals(leftKey.Replace('_', '-'), rightKey.Replace('_', '-'),
+                StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var leftMatch = Regex.Match(leftKey, @"^(?<prefix>[A-Z]+)-(?<number>\d+)(?<suffix>[A-Z]?)$");
+        var rightMatch = Regex.Match(rightKey, @"^(?<prefix>[A-Z]+)-(?<number>\d+)(?<suffix>[A-Z]?)$");
+        if (leftMatch.Success && rightMatch.Success)
+        {
+            return string.Equals(leftMatch.Groups["prefix"].Value,
+                       rightMatch.Groups["prefix"].Value, StringComparison.Ordinal) &&
+                   string.Equals(TrimLeadingZeros(leftMatch.Groups["number"].Value),
+                       TrimLeadingZeros(rightMatch.Groups["number"].Value), StringComparison.Ordinal) &&
+                   string.Equals(leftMatch.Groups["suffix"].Value,
+                       rightMatch.Groups["suffix"].Value, StringComparison.Ordinal);
+        }
+
+        return string.Equals(leftKey.Replace("-", string.Empty).Replace("_", string.Empty),
+            rightKey.Replace("-", string.Empty).Replace("_", string.Empty),
+            StringComparison.Ordinal);
+    }
+
+    private static string NormalizeNumberKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+        var normalized = Regex.Replace(value.Trim().ToUpperInvariant(), @"\s+", "-");
+        normalized = Regex.Replace(normalized, @"-{2,}", "-").Trim('-', '_');
+        return normalized;
+    }
+
+    private static string TrimLeadingZeros(string value)
+    {
+        var trimmed = value.TrimStart('0');
+        return trimmed.Length == 0 ? "0" : trimmed;
+    }
+
+    private static string ClassifyJavDbFailure(Exception exception)
+    {
+        var message = exception?.Message ?? string.Empty;
+        if (exception is ApiRequestException apiException)
+        {
+            if (apiException.IsNotFound ||
+                message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("info not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return "not_found";
+            }
+
+            if (message.Contains("rate", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("cooldown", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("限流", StringComparison.Ordinal) ||
+                message.Contains("too many", StringComparison.OrdinalIgnoreCase) ||
+                apiException.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return "rate_limit";
+            }
+
+            if (apiException.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ||
+                apiException.ApiErrorCode is 401 or 403 ||
+                message.Contains("login", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("captcha", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("登录", StringComparison.Ordinal))
+            {
+                return "auth";
+            }
+
+            if ((int)apiException.StatusCode >= 500 || apiException.ApiErrorCode >= 500)
+                return "server";
+            if (apiException.StatusCode == HttpStatusCode.BadRequest ||
+                message.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("keyword", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("番号", StringComparison.Ordinal))
+            {
+                return "number_mismatch";
+            }
+        }
+
+        if (exception is HttpRequestException or TaskCanceledException ||
+            message.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("network", StringComparison.OrdinalIgnoreCase))
+        {
+            return "network";
+        }
+        if (message.Contains("rate", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cooldown", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("限流", StringComparison.Ordinal) ||
+            message.Contains("too many", StringComparison.OrdinalIgnoreCase))
+        {
+            return "rate_limit";
+        }
+        if (message.Contains("login", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("captcha", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("登录", StringComparison.Ordinal))
+        {
+            return "auth";
+        }
+        if (message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("info not found", StringComparison.OrdinalIgnoreCase))
+        {
+            return "not_found";
+        }
+        if (message.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("keyword", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("番号", StringComparison.Ordinal))
+        {
+            return "number_mismatch";
+        }
+        if (message.Contains("cloudflare", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("anti-bot", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("server", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            return "server";
+        }
+
+        return "unknown";
     }
 
     private static JavDbPremiereDate? GetPremiereDate(DateTime releaseDate)

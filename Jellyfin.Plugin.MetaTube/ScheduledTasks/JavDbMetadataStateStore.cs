@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 internal static class JavDbMetadataStateStore
 {
     public const string StateFileName = "javdb-metadata-incremental-state.json";
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
     private const int MaxRecordsPerTable = 10000;
     private static readonly SemaphoreSlim FileLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -314,6 +314,8 @@ internal sealed class JavDbMetadataRecord
     public string Keyword { get; set; } = string.Empty;
 
     public string Message { get; set; } = string.Empty;
+
+    public string FailureKind { get; set; } = string.Empty;
 
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

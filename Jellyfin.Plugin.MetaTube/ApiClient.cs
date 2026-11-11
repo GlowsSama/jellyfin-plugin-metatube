@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -11,6 +12,22 @@ using MediaBrowser.Common.Net;
 #endif
 
 namespace Jellyfin.Plugin.MetaTube;
+
+public sealed class ApiRequestException : Exception
+{
+    public ApiRequestException(HttpStatusCode statusCode, int apiErrorCode, string message)
+        : base($"API request error: {apiErrorCode} ({message})")
+    {
+        StatusCode = statusCode;
+        ApiErrorCode = apiErrorCode;
+    }
+
+    public HttpStatusCode StatusCode { get; }
+
+    public int ApiErrorCode { get; }
+
+    public bool IsNotFound => StatusCode == HttpStatusCode.NotFound || ApiErrorCode == 404;
+}
 
 public static class ApiClient
 {
@@ -531,19 +548,39 @@ public static class ApiClient
         CancellationToken cancellationToken)
     {
 
-        // Nullable forgiving reason:
-        // Response is unlikely to be null.
-        // If it happens to be null, an exception is planed to be thrown either way.
-        var apiResponse = (await response.Content!
-            .ReadFromJsonAsync<ResponseInfo<T>>(cancellationToken: cancellationToken).ConfigureAwait(false))!;
+        ResponseInfo<T> apiResponse;
+        try
+        {
+            apiResponse = await response.Content!
+                .ReadFromJsonAsync<ResponseInfo<T>>(cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (System.Text.Json.JsonException) when (!response.IsSuccessStatusCode)
+        {
+            throw new ApiRequestException(
+                response.StatusCode,
+                (int)response.StatusCode,
+                response.ReasonPhrase ?? "HTTP request failed");
+        }
 
-        // EnsureSuccessStatusCode ignoring reason:
         // When the status is unsuccessful, the API response contains error details.
-        if (!response.IsSuccessStatusCode && apiResponse.Error != null)
-            throw new Exception($"API request error: {apiResponse.Error.Code} ({apiResponse.Error.Message})");
+        if (!response.IsSuccessStatusCode)
+        {
+            if (apiResponse?.Error == null)
+            {
+                throw new ApiRequestException(
+                    response.StatusCode,
+                    (int)response.StatusCode,
+                    response.ReasonPhrase ?? "HTTP request failed");
+            }
+
+            throw new ApiRequestException(
+                response.StatusCode,
+                apiResponse.Error.Code,
+                apiResponse.Error.Message);
+        }
 
         // Note: data field must not be null if there are no errors.
-        if (apiResponse.Data == null)
+        if (apiResponse?.Data == null)
             throw new Exception("Response data field is null");
 
         return apiResponse.Data;
