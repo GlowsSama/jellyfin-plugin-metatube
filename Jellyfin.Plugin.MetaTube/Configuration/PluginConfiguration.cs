@@ -173,10 +173,34 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 失败记录")]
-    [Description("只读统计。失败记录会在下次任务运行时自动重试，最多保留 10000 条。")]
+    [Description("只读统计。可在下方失败任务文本框中编辑、映射或删除任务，最多保留 10000 条。")]
     [ReadOnly(true)]
 #endif
     public int JavDbMetadataFailureCount => GetJavDbMetadataSummary().FailureCount;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public string JavDbMetadataFailureEditor { get; set; } = string.Empty;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public bool JavDbMetadataFailureEditorDirty { get; set; } = false;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public string JavDbMetadataFailureTaskText
+    {
+        get
+        {
+            if (JavDbMetadataFailureEditorDirty)
+                return JavDbMetadataFailureEditor ?? string.Empty;
+
+            return JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
+        }
+    }
 
 #if __EMBY__
     [DisplayName("JAVDB 上次运行")]
@@ -209,7 +233,19 @@ public class PluginConfiguration : BasePluginConfiguration
 
     private JavDbMetadataSummary GetJavDbMetadataSummary()
     {
-        return JavDbMetadataStateStore.GetSummary(
+        var state = LoadJavDbMetadataState();
+        return new JavDbMetadataSummary
+        {
+            SuccessCount = state.Successes.Count,
+            FailureCount = state.Failures.Count,
+            LastRunAtUtc = state.LastRunAtUtc,
+            LastRunMode = state.LastRunMode
+        };
+    }
+
+    private JavDbMetadataState LoadJavDbMetadataState()
+    {
+        return JavDbMetadataStateStore.LoadForRead(
             Plugin.Instance?.JavDbMetadataStatePath,
             () => new JavDbMetadataState
             {

@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 internal static class JavDbMetadataStateStore
 {
     public const string StateFileName = "javdb-metadata-incremental-state.json";
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
     private const int MaxRecordsPerTable = 10000;
     private static readonly SemaphoreSlim FileLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -59,8 +59,22 @@ internal static class JavDbMetadataStateStore
         string stateFilePath,
         Func<JavDbMetadataState> legacyStateFactory = null)
     {
+        var state = LoadForRead(stateFilePath, legacyStateFactory);
+        return new JavDbMetadataSummary
+        {
+            SuccessCount = state.Successes.Count,
+            FailureCount = state.Failures.Count,
+            LastRunAtUtc = state.LastRunAtUtc,
+            LastRunMode = state.LastRunMode
+        };
+    }
+
+    public static JavDbMetadataState LoadForRead(
+        string stateFilePath,
+        Func<JavDbMetadataState> legacyStateFactory = null)
+    {
         if (string.IsNullOrWhiteSpace(stateFilePath))
-            return new JavDbMetadataSummary();
+            return new JavDbMetadataState();
 
         FileLock.Wait();
         try
@@ -75,13 +89,7 @@ internal static class JavDbMetadataStateStore
                 WriteStateFile(stateFilePath, state);
             }
 
-            return new JavDbMetadataSummary
-            {
-                SuccessCount = state.Successes.Count,
-                FailureCount = state.Failures.Count,
-                LastRunAtUtc = state.LastRunAtUtc,
-                LastRunMode = state.LastRunMode
-            };
+            return state;
         }
         finally
         {
@@ -104,6 +112,98 @@ internal static class JavDbMetadataStateStore
         {
             FileLock.Release();
         }
+    }
+
+    public static string GetFailureEditorText(JavDbMetadataState state)
+    {
+        if (state?.Failures == null)
+            return string.Empty;
+
+        return string.Join('\n', state.Failures
+            .Where(record => record != null)
+            .Select(record => new
+            {
+                Source = GetSourceKeyword(record),
+                Target = record.Keyword?.Trim() ?? string.Empty,
+                record.UpdatedAtUtc
+            })
+            .Where(record => !string.IsNullOrWhiteSpace(record.Source))
+            .GroupBy(record => record.Source, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(record => record.UpdatedAtUtc).First())
+            .OrderByDescending(record => record.UpdatedAtUtc)
+            .Select(record => string.Equals(record.Source, record.Target, StringComparison.OrdinalIgnoreCase)
+                ? record.Source
+                : $"{record.Source}={record.Target}"));
+    }
+
+    public static JavDbFailureEditorApplyResult ApplyFailureEditor(
+        JavDbMetadataState state,
+        string failureEditorText)
+    {
+        state ??= new JavDbMetadataState();
+        state.Failures ??= new List<JavDbMetadataRecord>();
+        state.Successes ??= new List<JavDbMetadataRecord>();
+
+        var requests = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var blockedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawLine in (failureEditorText ?? string.Empty).Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex < 0)
+            {
+                requests[line] = line;
+                continue;
+            }
+
+            var source = line[..separatorIndex].Trim();
+            var target = line[(separatorIndex + 1)..].Trim();
+            if (source.Length == 0)
+                continue;
+            if (target.Length == 0)
+            {
+                blockedSources.Add(source);
+                continue;
+            }
+
+            requests[source] = target;
+        }
+
+        var result = new JavDbFailureEditorApplyResult();
+        var now = DateTimeOffset.UtcNow;
+        foreach (var record in state.Failures.ToList())
+        {
+            var source = GetSourceKeyword(record);
+            if (string.IsNullOrWhiteSpace(source) || blockedSources.Contains(source))
+            {
+                result.Unchanged++;
+                continue;
+            }
+
+            if (requests.TryGetValue(source, out var target))
+            {
+                record.SourceKeyword = source;
+                record.Keyword = target;
+                record.UpdatedAtUtc = now;
+                result.Updated++;
+                continue;
+            }
+
+            state.Failures.Remove(record);
+            record.SourceKeyword = source;
+            record.Message = "manual_complete: removed from the JAVDB failure task list";
+            record.FailureKind = "manual_complete";
+            record.UpdatedAtUtc = now;
+            state.Successes.RemoveAll(success => GetRecordKey(success) == GetRecordKey(record));
+            state.Successes.Add(record);
+            result.Completed++;
+        }
+
+        NormalizeState(state);
+        return result;
     }
 
     public static List<JavDbMetadataRecord> ParseLegacyRecords(string value)
@@ -247,6 +347,10 @@ internal static class JavDbMetadataStateStore
         state.Failures ??= new List<JavDbMetadataRecord>();
         state.Successes = NormalizeRecords(state.Successes);
         state.Failures = NormalizeRecords(state.Failures);
+        foreach (var record in state.Failures)
+        {
+            record.SourceKeyword = GetSourceKeyword(record);
+        }
 
         var failedKeys = state.Failures
             .Select(GetRecordKey)
@@ -277,6 +381,25 @@ internal static class JavDbMetadataStateStore
             ? record.ItemId.Trim()
             : record.Keyword?.Trim() ?? string.Empty;
     }
+
+    private static string GetSourceKeyword(JavDbMetadataRecord record)
+    {
+        if (record == null)
+            return string.Empty;
+
+        return !string.IsNullOrWhiteSpace(record.SourceKeyword)
+            ? record.SourceKeyword.Trim()
+            : record.Keyword?.Trim() ?? string.Empty;
+    }
+}
+
+internal sealed class JavDbFailureEditorApplyResult
+{
+    public int Updated { get; set; }
+
+    public int Completed { get; set; }
+
+    public int Unchanged { get; set; }
 }
 
 internal sealed class JavDbMetadataSummary
@@ -310,6 +433,8 @@ internal sealed class JavDbMetadataRecord
     public string ItemId { get; set; } = string.Empty;
 
     public string Name { get; set; } = string.Empty;
+
+    public string SourceKeyword { get; set; } = string.Empty;
 
     public string Keyword { get; set; } = string.Empty;
 

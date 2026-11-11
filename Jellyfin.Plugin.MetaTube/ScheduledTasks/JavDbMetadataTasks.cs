@@ -189,6 +189,19 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     continue;
                 }
 
+                var failureAlias = FindFailureAlias(state, item, keywords);
+                var sourceKeyword = failureAlias == null
+                    ? keywords[0]
+                    : GetFailureSourceKeyword(failureAlias);
+                if (failureAlias != null &&
+                    !string.IsNullOrWhiteSpace(failureAlias.Keyword))
+                {
+                    var mappedKeyword = failureAlias.Keyword.Trim();
+                    keywords.RemoveAll(candidate =>
+                        string.Equals(candidate, mappedKeyword, StringComparison.OrdinalIgnoreCase));
+                    keywords.Insert(0, mappedKeyword);
+                }
+
                 var keyword = keywords[0];
                 var original = CaptureSnapshot(item, selection.HasPeople);
                 var metadataCleared = false;
@@ -298,7 +311,8 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         _logger.Warn(
                             "JAVDB 元数据未找到 | 项目ID={0} | 标题={1} | 候选={2} | 已恢复原元数据",
                             item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
-                        RecordOutcome(state, item, keyword, false, "not_found", failureMessage);
+                        RecordOutcome(state, item, sourceKeyword, keyword, false, "not_found",
+                            failureMessage);
                         pendingStateWrites++;
                     }
                     else
@@ -334,7 +348,8 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                         if (itemUpdated)
                             updated++;
 
-                        RecordOutcome(state, item, keyword, true, string.Empty, string.Empty);
+                        RecordOutcome(state, item, sourceKeyword, keyword, true, string.Empty,
+                            string.Empty);
                         _logger.Info(
                             "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 替换项目={3} | 已更新={4}",
                             keyword, item.Id.ToString("N"), item.Name, selection.Signature,
@@ -365,7 +380,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                     _logger.Error(
                         "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 类型={3} | 错误={4}",
                         keyword, item.Id.ToString("N"), item.Name, failureKind, exception.Message);
-                    RecordOutcome(state, item, keyword, false, failureKind,
+                    RecordOutcome(state, item, sourceKeyword, keyword, false, failureKind,
                         $"{failureKind}: {exception.Message}");
                     pendingStateWrites++;
                 }
@@ -407,21 +422,23 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     private static void RecordOutcome(
         JavDbMetadataState state,
         BaseItem item,
-        string keyword,
+        string sourceKeyword,
+        string effectiveKeyword,
         bool success,
         string failureKind,
         string message)
     {
         var now = DateTimeOffset.UtcNow;
         state.LastRunAtUtc = now;
-        state.Successes.RemoveAll(record => IsSameItem(record, item, keyword));
-        state.Failures.RemoveAll(record => IsSameItem(record, item, keyword));
+        state.Successes.RemoveAll(record => IsSameItem(record, item, sourceKeyword));
+        state.Failures.RemoveAll(record => IsSameItem(record, item, sourceKeyword));
 
         var record = new JavDbMetadataRecord
         {
             ItemId = item.Id.ToString("N"),
             Name = item.Name,
-            Keyword = keyword,
+            SourceKeyword = sourceKeyword,
+            Keyword = effectiveKeyword,
             Message = success ? string.Empty : message ?? string.Empty,
             FailureKind = success ? string.Empty : failureKind ?? string.Empty,
             UpdatedAtUtc = now
@@ -441,6 +458,27 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 cancellationToken)
             .ConfigureAwait(false);
 
+        if (configuration.JavDbMetadataFailureEditorDirty)
+        {
+            var result = JavDbMetadataStateStore.ApplyFailureEditor(
+                state, configuration.JavDbMetadataFailureEditor);
+            try
+            {
+                await JavDbMetadataStateStore.SaveAsync(_stateFilePath, state, cancellationToken)
+                    .ConfigureAwait(false);
+                configuration.JavDbMetadataFailureEditor = string.Empty;
+                configuration.JavDbMetadataFailureEditorDirty = false;
+                Plugin.Instance.SaveConfiguration(configuration);
+                _logger.Info(
+                    "JAVDB 失败任务清单已应用 | 修改映射={0} | 标记完成={1} | 保持不变={2}",
+                    result.Updated, result.Completed, result.Unchanged);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error("JAVDB 失败任务清单应用失败 | 错误={0}", exception.Message);
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(configuration.JavDbMetadataSuccessRecords) ||
             !string.IsNullOrWhiteSpace(configuration.JavDbMetadataFailureRecords) ||
             !configuration.JavDbMetadataRecordsInitialized)
@@ -452,6 +490,30 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         return state;
+    }
+
+    private static JavDbMetadataRecord FindFailureAlias(
+        JavDbMetadataState state,
+        BaseItem item,
+        IReadOnlyCollection<string> keywords)
+    {
+        var itemId = item.Id.ToString("N");
+        var byItemId = state.Failures.FirstOrDefault(record =>
+            string.Equals(record.ItemId, itemId, StringComparison.OrdinalIgnoreCase));
+        if (byItemId != null)
+            return byItemId;
+
+        return state.Failures.FirstOrDefault(record =>
+            keywords.Any(keyword =>
+                string.Equals(record.Keyword, keyword, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(record.SourceKeyword, keyword, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static string GetFailureSourceKeyword(JavDbMetadataRecord record)
+    {
+        if (!string.IsNullOrWhiteSpace(record.SourceKeyword))
+            return record.SourceKeyword.Trim();
+        return record.Keyword?.Trim() ?? string.Empty;
     }
 
     private static JavDbMetadataState ReadConfigurationState(Configuration.PluginConfiguration configuration)
@@ -1145,7 +1207,7 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。\n\n如需再次全量运行点击下面“删除其它元数据”。";
+        "运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。失败任务可在插件设置中的失败任务文本框里映射番号，删除对应行则标记为完成。\n\n如需再次全量运行点击下面“删除其它元数据”。";
 #else
         "Replaces only the other metadata fields selected in the plugin settings. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Each movie-number task is followed by a 10-second interval. A failed domain is retried twice before rotating to the next backup. If every domain fails, cooldowns escalate through 15, 30, 60 and 120 minutes.";
 #endif

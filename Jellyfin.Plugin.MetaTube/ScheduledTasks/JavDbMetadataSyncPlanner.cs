@@ -87,9 +87,13 @@ internal static class JavDbMetadataSyncPlanner
         public StateIndex(JavDbMetadataState state)
         {
             _failedItemIds = BuildSet(state?.Failures, record => record.ItemId);
-            _failedKeywords = BuildSet(state?.Failures, record => record.Keyword);
+            _failedKeywords = BuildSet(state?.Failures, record => record.Keyword)
+                .Concat(BuildSet(state?.Failures, record => record.SourceKeyword))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             _successfulItemIds = BuildSet(state?.Successes, record => record.ItemId);
-            _successfulKeywords = BuildSet(state?.Successes, record => record.Keyword);
+            _successfulKeywords = BuildSet(state?.Successes, record => record.Keyword)
+                .Concat(BuildSet(state?.Successes, record => record.SourceKeyword))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
         public bool IsFailed(BaseItem item, string keyword)
