@@ -364,7 +364,9 @@ internal static class JavDbMetadataStateStore
     private static List<JavDbMetadataRecord> NormalizeRecords(IEnumerable<JavDbMetadataRecord> records)
     {
         return (records ?? Enumerable.Empty<JavDbMetadataRecord>())
-            .Where(record => record != null && !string.IsNullOrWhiteSpace(GetRecordKey(record)))
+            .Where(record => record != null &&
+                             !string.IsNullOrWhiteSpace(GetRecordKey(record)) &&
+                             !IsNumericOnly(GetSourceKeyword(record)))
             .GroupBy(GetRecordKey, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(record => record.UpdatedAtUtc).First())
             .OrderByDescending(record => record.UpdatedAtUtc)
@@ -390,6 +392,11 @@ internal static class JavDbMetadataStateStore
         return !string.IsNullOrWhiteSpace(record.SourceKeyword)
             ? record.SourceKeyword.Trim()
             : record.Keyword?.Trim() ?? string.Empty;
+    }
+
+    private static bool IsNumericOnly(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && value.All(char.IsDigit);
     }
 }
 

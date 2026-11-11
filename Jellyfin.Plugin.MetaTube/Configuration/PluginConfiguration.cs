@@ -191,7 +191,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("JAVDB 失败任务")]
     [Description(
-        "每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除。")]
+        "每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除，纯数字来源内部 ID 会被自动忽略。")]
     [EditMultiline(12)]
 #endif
     public string JavDbMetadataFailureTaskText

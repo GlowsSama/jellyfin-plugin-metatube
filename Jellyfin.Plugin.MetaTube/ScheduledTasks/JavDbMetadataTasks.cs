@@ -43,7 +43,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         @"(?i)(?<![A-Z0-9])(?<prefix>[A-Z]{2,10})(?<number>\d{2,5})(?![A-Z0-9])",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex DetailIdPattern = new(
-        @"^[A-Za-z0-9]{4,20}$",
+        @"^(?=.*[A-Za-z])[A-Za-z0-9]{4,20}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex PersonNameSeparatorPattern = new(
         @"\s*[,，、;/；|｜]\s*",
