@@ -54,11 +54,22 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Plugin.ProviderId);
-        if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
+        if (string.IsNullOrWhiteSpace(pid.Id) ||
+            string.IsNullOrWhiteSpace(pid.Provider) ||
+            PluginConfiguration.IsJavDbProvider(pid.Provider))
         {
-            // Search movies and pick the first result.
+            // JAVDB is reserved for the scheduled metadata task. Re-resolve an
+            // existing JAVDB provider ID through ordinary non-JAVDB sources.
             var firstResult = (await GetSearchResults(info, cancellationToken)).FirstOrDefault();
             if (firstResult != null) pid = firstResult.GetPid(Plugin.ProviderId);
+        }
+
+        if (string.IsNullOrWhiteSpace(pid.Id) ||
+            string.IsNullOrWhiteSpace(pid.Provider) ||
+            PluginConfiguration.IsJavDbProvider(pid.Provider))
+        {
+            Logger.Warn("No ordinary movie provider result is available for: {0}", info.Name);
+            return new MetadataResult<Movie>();
         }
 
         Logger.Info("Get movie info: {0}", pid.ToString());
@@ -187,24 +198,25 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Plugin.ProviderId);
-        var providerFilter = GetMovieProviderFilter(info);
+        var providerFilter = GetMovieProviderFilter(info)
+            .Where(provider => !PluginConfiguration.IsJavDbProvider(provider))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         var searchResults = new List<MovieSearchResult>();
-        if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
+        if (string.IsNullOrWhiteSpace(pid.Id) ||
+            string.IsNullOrWhiteSpace(pid.Provider) ||
+            PluginConfiguration.IsJavDbProvider(pid.Provider))
         {
             // Search movie by name.
             Logger.Info("Search for movie: {0}", info.Name);
-            if (providerFilter.Any())
-            {
-                Logger.Info("Search movie {0} with custom providers: {1}", info.Name,
-                    string.Join(',', providerFilter));
-                searchResults.AddRange(
-                    await SearchMoviesByProvidersAsync(info.Name, providerFilter, cancellationToken));
-            }
-            else
-            {
-                searchResults.AddRange(await ApiClient.SearchMovieAsync(info.Name, pid.Provider, cancellationToken));
-            }
+            var searchProviders = providerFilter.Any()
+                ? providerFilter
+                : Configuration.GetAllEnabledMovieProviders();
+            Logger.Info("Search movie {0} with providers: {1}", info.Name,
+                string.Join(',', searchProviders));
+            searchResults.AddRange(
+                await SearchMoviesByProvidersAsync(info.Name, searchProviders, cancellationToken));
         }
         else
         {
@@ -226,8 +238,11 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             Logger.Info(
                 "Custom movie providers returned no results for {0}; retrying with all enabled providers",
                 info.Name);
-            searchResults = await ApiClient.SearchMovieAsync(info.Name, string.Empty, cancellationToken);
-            searchResults = ApplyMovieProviderFilter(searchResults, GetGlobalMovieProviderFilter());
+            var fallbackProviders = GetGlobalMovieProviderFilter();
+            if (!fallbackProviders.Any())
+                fallbackProviders = Configuration.GetAllEnabledMovieProviders();
+            searchResults = await SearchMoviesByProvidersAsync(info.Name, fallbackProviders, cancellationToken);
+            searchResults = ApplyMovieProviderFilter(searchResults, fallbackProviders);
         }
 
         var results = new List<RemoteSearchResult>();
@@ -257,7 +272,15 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     private async Task<List<MovieSearchResult>> SearchMoviesByProvidersAsync(string keyword,
         IReadOnlyList<string> providers, CancellationToken cancellationToken)
     {
-        var searches = providers.Select(async provider =>
+        var enabledProviders = providers?
+            .Where(provider => !string.IsNullOrWhiteSpace(provider))
+            .Where(provider => !PluginConfiguration.IsJavDbProvider(provider))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+        if (!enabledProviders.Any())
+            return new List<MovieSearchResult>();
+
+        var searches = enabledProviders.Select(async provider =>
         {
             try
             {
@@ -579,13 +602,16 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         List<MovieSearchResult> searchResults,
         IReadOnlyList<string> providerFilter)
     {
+        // JAVDB is never a valid result for ordinary metadata or image requests.
+        searchResults.RemoveAll(m =>
+            PluginConfiguration.IsJavDbProvider(m.Provider) ||
+            (providerFilter.Any() &&
+             !providerFilter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase)));
+
         if (!providerFilter.Any())
             return searchResults;
 
-        // Filter out mismatched results.
-        searchResults.RemoveAll(m => !providerFilter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
-
-        // Reorder results by stable sort.
+        // Reorder results by the configured provider priority.
         var indexedProviderFilter = providerFilter.ToList();
         return searchResults.OrderBy(m =>
             indexedProviderFilter.FindIndex(s =>
@@ -599,9 +625,10 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 
         var globalProviders = GetGlobalMovieProviderFilter();
         if (!globalProviders.Any())
-            return libraryProviders;
+            return libraryProviders.Where(provider => !PluginConfiguration.IsJavDbProvider(provider)).ToList();
 
         return libraryProviders
+            .Where(provider => !PluginConfiguration.IsJavDbProvider(provider))
             .Where(provider => globalProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
             .ToList();
     }

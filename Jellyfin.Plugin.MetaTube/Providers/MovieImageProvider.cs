@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.MetaTube.Configuration;
 using Jellyfin.Plugin.MetaTube.Extensions;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
@@ -33,6 +34,8 @@ public class MovieImageProvider : BaseProvider, IRemoteImageProvider, IHasOrder
     {
         var pid = item.GetPid(Plugin.ProviderId);
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
+            return Enumerable.Empty<RemoteImageInfo>();
+        if (PluginConfiguration.IsJavDbProvider(pid.Provider))
             return Enumerable.Empty<RemoteImageInfo>();
 
         var m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);

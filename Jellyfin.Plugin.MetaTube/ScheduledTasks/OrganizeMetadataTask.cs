@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.MetaTube.Configuration;
 using Jellyfin.Plugin.MetaTube.Extensions;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -193,6 +194,8 @@ public class OrganizeMetadataTask : IScheduledTask
     {
         var pid = item.GetPid(Plugin.ProviderId);
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
+            return;
+        if (PluginConfiguration.IsJavDbProvider(pid.Provider))
             return;
 
         var m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);

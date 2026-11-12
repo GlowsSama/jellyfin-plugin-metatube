@@ -287,7 +287,7 @@ public static class ApiClient
     {
         var server = Plugin.Instance.Configuration.Server;
         var token = Plugin.Instance.Configuration.Token;
-        var (signature, providers) = GetDomainsConfiguration();
+        var (signature, providers, primaryDomains) = GetDomainsConfiguration();
 
         if (IsDomainsSyncCurrent(server, token, signature))
             return;
@@ -297,14 +297,15 @@ public static class ApiClient
         {
             server = Plugin.Instance.Configuration.Server;
             token = Plugin.Instance.Configuration.Token;
-            (signature, providers) = GetDomainsConfiguration();
+            (signature, providers, primaryDomains) = GetDomainsConfiguration();
 
             if (IsDomainsSyncCurrent(server, token, signature))
                 return;
 
             // Avoid an unnecessary migration request when no custom domains are used.
             if (!IsDomainsSyncInitialized &&
-                providers.Values.All(domains => domains.Length == 0))
+                providers.Values.All(domains => domains.Length == 0) &&
+                primaryDomains.Values.All(string.IsNullOrWhiteSpace))
             {
                 MarkDomainsSyncComplete(server, token, signature);
                 return;
@@ -314,7 +315,8 @@ public static class ApiClient
                 new NameValueCollection()));
             request.Content = JsonContent.Create(new DomainsConfigRequest
             {
-                Providers = providers
+                Providers = providers,
+                PrimaryDomains = primaryDomains
             });
 
             AddGeneralHeaders(request);
@@ -341,7 +343,8 @@ public static class ApiClient
         var username = Plugin.Instance.Configuration.JavDbUsername?.Trim() ?? string.Empty;
         var password = Plugin.Instance.Configuration.JavDbPassword ?? string.Empty;
         var cookie = Plugin.Instance.Configuration.JavDbCookie?.Trim() ?? string.Empty;
-        var signature = GetJavDbSessionSignature(username, password, cookie);
+        var primaryDomain = Plugin.Instance.Configuration.JavDbPrimaryDomain?.Trim() ?? string.Empty;
+        var signature = GetJavDbSessionSignature(primaryDomain, username, password, cookie);
 
         if (IsJavDbSessionSyncCurrent(server, token, signature))
             return;
@@ -354,7 +357,8 @@ public static class ApiClient
             username = Plugin.Instance.Configuration.JavDbUsername?.Trim() ?? string.Empty;
             password = Plugin.Instance.Configuration.JavDbPassword ?? string.Empty;
             cookie = Plugin.Instance.Configuration.JavDbCookie?.Trim() ?? string.Empty;
-            signature = GetJavDbSessionSignature(username, password, cookie);
+            primaryDomain = Plugin.Instance.Configuration.JavDbPrimaryDomain?.Trim() ?? string.Empty;
+            signature = GetJavDbSessionSignature(primaryDomain, username, password, cookie);
 
             if (IsJavDbSessionSyncCurrent(server, token, signature))
                 return;
@@ -419,16 +423,23 @@ public static class ApiClient
         await ConfigureJavDbSessionAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static (string Signature, Dictionary<string, string[]> Providers) GetDomainsConfiguration()
+    private static (string Signature, Dictionary<string, string[]> Providers,
+        Dictionary<string, string> PrimaryDomains) GetDomainsConfiguration()
     {
         var providers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             ["JavDB"] = SplitBackupDomains(Plugin.Instance.Configuration.JavDbBackupDomains),
             ["MissAV"] = SplitBackupDomains(Plugin.Instance.Configuration.MissAvBackupDomains)
         };
+        var primaryDomains = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["JavDB"] = Plugin.Instance.Configuration.JavDbPrimaryDomain?.Trim() ?? string.Empty
+        };
         var signature = string.Join(";", providers.Select(provider =>
-            $"{provider.Key}={string.Join(",", provider.Value)}"));
-        return (signature, providers);
+                              $"{provider.Key}={string.Join(",", provider.Value)}"))
+                          + ";primary="
+                          + string.Join(";", primaryDomains.Select(domain => $"{domain.Key}={domain.Value}"));
+        return (signature, providers, primaryDomains);
     }
 
     private static string[] SplitBackupDomains(string value)
@@ -483,9 +494,10 @@ public static class ApiClient
         }
     }
 
-    private static string GetJavDbSessionSignature(string username, string password, string cookie)
+    private static string GetJavDbSessionSignature(string primaryDomain, string username, string password,
+        string cookie)
     {
-        var material = string.Join("\n", username, password, cookie);
+        var material = string.Join("\n", primaryDomain, username, password, cookie);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
     }
 
@@ -660,12 +672,18 @@ public static class ApiClient
     {
         [JsonPropertyName("providers")]
         public Dictionary<string, string[]> Providers { get; set; }
+
+        [JsonPropertyName("primary_domains")]
+        public Dictionary<string, string> PrimaryDomains { get; set; }
     }
 
     private sealed class DomainsConfigResult
     {
         [JsonPropertyName("providers")]
         public Dictionary<string, string[]> Providers { get; set; }
+
+        [JsonPropertyName("primary_domains")]
+        public Dictionary<string, string> PrimaryDomains { get; set; }
     }
 
     private sealed class JavDbSessionConfigRequest

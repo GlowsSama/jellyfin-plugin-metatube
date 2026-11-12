@@ -321,13 +321,19 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtLibraryProviderFilterRules">媒体库自定义刮削源：</label>
                         <textarea class="emby-input" id="txtLibraryProviderFilterRules" is="emby-input" name="txtLibraryProviderFilterRules" rows="8"></textarea>
-                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,JAVDB。媒体库名称支持空格、中文和 | 等符号。填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。</div>
+                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,AVMOO。媒体库名称支持空格、中文和 | 等符号。填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPrimaryDomain">JavDB 主站域名：</label>
+                        <input id="txtJavDbPrimaryDomain" is="emby-input" name="txtJavDbPrimaryDomain" type="text"/>
+                        <div class="fieldDescription">留空使用 JavDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只会同步到主站。</div>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JavDB 备用域名：</label>
                         <input id="txtJavDbBackupDomains" is="emby-input" name="txtJavDbBackupDomains" type="text"/>
-                        <div class="fieldDescription">主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。</div>
+                        <div class="fieldDescription">按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。</div>
                     </div>
 
                     <div class="inputContainer">
@@ -572,8 +578,7 @@
             "AVSOX",
             "Manko",
             "ThePornDBScene",
-            "ThePornDBMovie",
-            "JavDB"
+            "ThePornDBMovie"
         ];
 
         var MetaTubeJavDbReplacementOptions = [
@@ -590,7 +595,7 @@
             var providers = [];
             (value || "").split(",").forEach(function (provider) {
                 provider = provider.trim();
-                if (provider && !providers.some(function (item) {
+                if (provider && provider.toLowerCase() !== "javdb" && !providers.some(function (item) {
                     return item.toLowerCase() === provider.toLowerCase();
                 })) {
                     providers.push(provider);
@@ -866,6 +871,7 @@
                 renderMovieProviderFilter(config.RawMovieProviderFilter);
                 page.querySelector('#chkEnableLibraryProviderFilter').checked = config.EnableLibraryProviderFilter;
                 $('#txtLibraryProviderFilterRules', page).val(config.LibraryProviderFilterRules).change();
+                $('#txtJavDbPrimaryDomain', page).val(config.JavDbPrimaryDomain).change();
                 $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
                 $('#txtJavDbUsername', page).val(config.JavDbUsername).change();
                 $('#txtJavDbPassword', page).val(config.JavDbPassword).change();
@@ -928,6 +934,7 @@
                 config.RawMovieProviderFilter = getSelectedMovieProviders().join(",");
                 config.EnableLibraryProviderFilter = $('#chkEnableLibraryProviderFilter', form).prop('checked');
                 config.LibraryProviderFilterRules = $('#txtLibraryProviderFilterRules', form).val();
+                config.JavDbPrimaryDomain = $('#txtJavDbPrimaryDomain', form).val();
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
                 config.JavDbUsername = $('#txtJavDbUsername', form).val();
                 config.JavDbPassword = $('#txtJavDbPassword', form).val();

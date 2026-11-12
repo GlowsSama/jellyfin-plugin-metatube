@@ -330,6 +330,7 @@ public class PluginConfiguration : BasePluginConfiguration
     {
         get => _movieProviderFilter?.Any() == true ? string.Join(',', _movieProviderFilter) : string.Empty;
         set => _movieProviderFilter = value?.Split(',').Select(s => s.Trim()).Where(s => s.Any())
+            .Where(provider => !IsJavDbProvider(provider))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
@@ -343,7 +344,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("媒体库自定义刮削源")]
     [Description(
-        "每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,JAVDB\n填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。")]
+        "每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,AVMOO\n填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。")]
     [EditMultiline(8)]
 #endif
     public string LibraryProviderFilterRules { get; set; } = string.Empty;
@@ -366,6 +367,7 @@ public class PluginConfiguration : BasePluginConfiguration
             }).ToList();
         }
     }
+#endif
 
     private static readonly string[] KnownMovieProviders =
     {
@@ -412,8 +414,7 @@ public class PluginConfiguration : BasePluginConfiguration
         "AVSOX",
         "Manko",
         "ThePornDBScene",
-        "ThePornDBMovie",
-        "JavDB"
+        "ThePornDBMovie"
     };
 
     private static void AddMovieProviders(ICollection<string> target, IEnumerable<string> providers)
@@ -422,17 +423,33 @@ public class PluginConfiguration : BasePluginConfiguration
         {
             var normalized = provider?.Trim();
             if (!string.IsNullOrEmpty(normalized) &&
+                !IsJavDbProvider(normalized) &&
                 !target.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             {
                 target.Add(normalized);
             }
         }
     }
-#endif
+
+    public static bool IsJavDbProvider(string provider)
+    {
+        return string.Equals(provider?.Trim(), "JavDB", StringComparison.OrdinalIgnoreCase);
+    }
 
     public List<string> GetMovieProviderFilter()
     {
-        return _movieProviderFilter;
+        return _movieProviderFilter?
+                   .Where(provider => !IsJavDbProvider(provider))
+                   .ToList()
+               ?? new List<string>();
+    }
+
+    public IReadOnlyList<string> GetAllEnabledMovieProviders()
+    {
+        var configuredProviders = GetMovieProviderFilter();
+        return configuredProviders.Any()
+            ? configuredProviders
+            : KnownMovieProviders;
     }
 
     public IReadOnlyList<LibraryProviderFilterRule> GetLibraryProviderFilters()
@@ -459,6 +476,7 @@ public class PluginConfiguration : BasePluginConfiguration
                 .Split(new[] { ',', '，', ';', '；' },
                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Where(provider => provider.Any())
+                .Where(provider => !IsJavDbProvider(provider))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (!providers.Any())
@@ -507,8 +525,15 @@ public class PluginConfiguration : BasePluginConfiguration
     private List<string> _movieProviderFilter;
 
 #if __EMBY__
+    [DisplayName("JavDB 主站域名")]
+    [Description(
+        "留空使用 JavDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只会同步到主站。")]
+#endif
+    public string JavDbPrimaryDomain { get; set; } = string.Empty;
+
+#if __EMBY__
     [DisplayName("JavDB 备用域名")]
-    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。")]
+    [Description("按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。")]
 #endif
     public string JavDbBackupDomains { get; set; } = string.Empty;
 
