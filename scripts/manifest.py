@@ -9,6 +9,10 @@ from urllib.request import urlopen
 from packaging.version import Version
 
 
+def repository_slug() -> str:
+    return os.environ.get('GITHUB_REPOSITORY', 'GlowsSama/jellyfin-plugin-metatube')
+
+
 def md5sum(filename) -> str:
     with open(filename, 'rb') as f:
         return hashlib.md5(f.read()).hexdigest()
@@ -30,7 +34,7 @@ def generate(filename, version, csproj) -> dict:
         'checksum': md5sum(filename),
         'changelog': 'Auto Released by Actions',
         'targetAbi': f'{get_jellyfin_version(csproj)}.0',
-        'sourceUrl': 'https://github.com/metatube-community/jellyfin-plugin-metatube/releases/download/'
+        'sourceUrl': f'https://github.com/{repository_slug()}/releases/download/'
                      f'v{version}/Jellyfin.MetaTube@v{version}.zip',
         'timestamp': datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
         'version': version
@@ -46,8 +50,8 @@ def main() -> None:
     csproj = os.path.join(os.path.dirname(__file__),
                           "../Jellyfin.Plugin.MetaTube/Jellyfin.Plugin.MetaTube.csproj")
 
-    with urlopen(
-            'https://raw.githubusercontent.com/metatube-community/jellyfin-plugin-metatube/dist/manifest.json') as f:
+    manifest_url = f'https://raw.githubusercontent.com/{repository_slug()}/dist/manifest.json'
+    with urlopen(manifest_url) as f:
         manifest = json.load(f)
 
     manifest[0]['versions'].insert(0, generate(filename, version, csproj))
