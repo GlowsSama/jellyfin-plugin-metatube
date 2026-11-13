@@ -525,42 +525,49 @@ public class PluginConfiguration : BasePluginConfiguration
     private List<string> _movieProviderFilter;
 
 #if __EMBY__
-    [DisplayName("JavDB 主站域名")]
+    [DisplayName("JAVDB 主站域名")]
     [Description(
-        "留空使用 JavDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号、Cookie 和 Authorization 只会同步到主站。")]
+        "留空使用 JAVDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只同步到网页主站。")]
 #endif
     public string JavDbPrimaryDomain { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("JavDB 备用域名")]
-    [Description("按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。")]
-#endif
-    public string JavDbBackupDomains { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JavDB 账号")]
-    [Description("JavDB 登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie 或 Authorization。")]
+    [DisplayName("JAVDB 账号")]
+    [Description("JAVDB 网页主站登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。")]
 #endif
     public string JavDbUsername { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("JavDB 密码")]
-    [Description("JavDB 登录密码。凭据会通过当前 MetaTube 插件 HTTP 配置同步到服务端。")]
+    [DisplayName("JAVDB 密码")]
+    [Description("JAVDB 登录密码。凭据会通过当前 MetaTube 插件 HTTP 配置同步到服务端。")]
 #endif
     public string JavDbPassword { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("JavDB Cookie")]
-    [Description("优先于账号密码，但低于 Authorization。可从已登录浏览器复制完整 Cookie 请求头；内容会同步到 MetaTube 服务端。")]
+    [DisplayName("JAVDB Cookie")]
+    [Description("优先于网页账号密码。可从已登录浏览器复制完整 Cookie 请求头；仅在网页主站登录兜底时使用。")]
 #endif
     public string JavDbCookie { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("JavDB Authorization")]
+    [DisplayName("JAVDB API地址")]
     [Description(
-        "可填写 javdb-cli 获取的 Authorization、Bearer Token 或原始 Token。三种登录方式同时填写时优先使用 Authorization，其次 Cookie，最后账号密码。Authorization 只用于 JavDB 主站登录兜底，不会发送到备用域名。")]
+        "JAVDB API 地址，默认 https://jdforrepam.com/api。普通网页请求和备用域名不会使用此地址。")]
+#endif
+    public string JavDbApiUrl { get; set; } = "https://jdforrepam.com/api";
+
+#if __EMBY__
+    [DisplayName("JAVDB API Token")]
+    [Description(
+        "可填写 Authorization、Bearer Token 或原始 Token。备用站明确要求登录时优先调用 JAVDB API；API 失败后才使用网页主站 Cookie 或账号密码。Token 不会发送到网页主站或备用域名。")]
 #endif
     public string JavDbAuthorization { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB 备用域名")]
+    [Description("按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。")]
+#endif
+    public string JavDbBackupDomains { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("MissAV 备用域名")]
