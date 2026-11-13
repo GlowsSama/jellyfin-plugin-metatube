@@ -527,7 +527,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("JavDB 主站域名")]
     [Description(
-        "留空使用 JavDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只会同步到主站。")]
+        "留空使用 JavDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号、Cookie 和 Authorization 只会同步到主站。")]
 #endif
     public string JavDbPrimaryDomain { get; set; } = string.Empty;
 
@@ -539,7 +539,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JavDB 账号")]
-    [Description("JavDB 登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。")]
+    [Description("JavDB 登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie 或 Authorization。")]
 #endif
     public string JavDbUsername { get; set; } = string.Empty;
 
@@ -551,9 +551,16 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JavDB Cookie")]
-    [Description("优先于账号密码。可从已登录浏览器复制完整 Cookie 请求头；内容会同步到 MetaTube 服务端。")]
+    [Description("优先于账号密码，但低于 Authorization。可从已登录浏览器复制完整 Cookie 请求头；内容会同步到 MetaTube 服务端。")]
 #endif
     public string JavDbCookie { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JavDB Authorization")]
+    [Description(
+        "可填写 javdb-cli 获取的 Authorization、Bearer Token 或原始 Token。三种登录方式同时填写时优先使用 Authorization，其次 Cookie，最后账号密码。Authorization 只用于 JavDB 主站登录兜底，不会发送到备用域名。")]
+#endif
+    public string JavDbAuthorization { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("MissAV 备用域名")]
