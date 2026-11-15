@@ -54,9 +54,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Plugin.ProviderId);
-        if (string.IsNullOrWhiteSpace(pid.Id) ||
-            string.IsNullOrWhiteSpace(pid.Provider) ||
-            PluginConfiguration.IsJavDbProvider(pid.Provider))
+        if (ShouldSearchByMovieName(pid))
         {
             // JAVDB is reserved for the scheduled metadata task. Re-resolve an
             // existing JAVDB provider ID through ordinary non-JAVDB sources.
@@ -204,9 +202,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             .ToList();
 
         var searchResults = new List<MovieSearchResult>();
-        if (string.IsNullOrWhiteSpace(pid.Id) ||
-            string.IsNullOrWhiteSpace(pid.Provider) ||
-            PluginConfiguration.IsJavDbProvider(pid.Provider))
+        if (ShouldSearchByMovieName(pid))
         {
             // Search movie by name.
             Logger.Info("Search for movie: {0}", info.Name);
@@ -256,17 +252,46 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         {
             var result = new RemoteSearchResult
             {
-                Name = $"[{m.Provider}] {m.Number} {m.Title}",
+                Name = GetRemoteSearchResultName(m),
                 SearchProviderName = Name,
                 PremiereDate = m.ReleaseDate.GetValidDateTime(),
                 ProductionYear = m.ReleaseDate.GetValidYear(),
                 ImageUrl = ApiClient.GetPrimaryImageApiUrl(m.Provider, m.Id, m.ThumbUrl, 1.0, true)
             };
-            result.SetPid(Name, m.Provider, m.Id, pid.Position);
+            // A selected remote result is an exact provider choice. A later
+            // ordinary refresh still clears this marker and searches again.
+            result.SetPid(Name, m.Provider, m.Id, pid.Position, true);
             results.Add(result);
         }
 
         return results;
+    }
+
+    private static bool ShouldSearchByMovieName(ProviderId pid)
+    {
+        return string.IsNullOrWhiteSpace(pid.Id) ||
+               string.IsNullOrWhiteSpace(pid.Provider) ||
+               PluginConfiguration.IsJavDbProvider(pid.Provider) ||
+               pid.Update != true;
+    }
+
+    private static string GetRemoteSearchResultName(MovieSearchResult movie)
+    {
+        var number = movie.Number?.Trim();
+        var title = movie.Title?.Trim();
+        if (!string.IsNullOrWhiteSpace(number) && !string.IsNullOrWhiteSpace(title) &&
+            title.StartsWith(number, StringComparison.OrdinalIgnoreCase))
+        {
+            title = title[number.Length..].TrimStart(' ', '-', ':', '：', '|', '・', '—', '–');
+        }
+
+        if (string.IsNullOrWhiteSpace(title) ||
+            string.Equals(title, number, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"[{movie.Provider}] {number}";
+        }
+
+        return $"[{movie.Provider}] {number} {title}";
     }
 
     private async Task<List<MovieSearchResult>> SearchMoviesByProvidersAsync(string keyword,

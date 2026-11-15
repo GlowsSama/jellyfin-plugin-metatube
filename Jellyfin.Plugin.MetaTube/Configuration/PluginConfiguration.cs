@@ -412,6 +412,7 @@ public class PluginConfiguration : BasePluginConfiguration
         "123AV",
         "AVMOO",
         "AVSOX",
+        "AVFan",
         "Manko",
         "ThePornDBScene",
         "ThePornDBMovie"
