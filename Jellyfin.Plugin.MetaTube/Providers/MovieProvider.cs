@@ -279,9 +279,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                pid.Update != true;
     }
 
-    private static string GetMovieSearchKeyword(MovieInfo info)
+    private string GetMovieSearchKeyword(MovieInfo info)
     {
-        var mediaPath = info.Path?.Trim();
+        var mediaPath = FindMovieMediaPath(info)?.Trim();
         if (!string.IsNullOrWhiteSpace(mediaPath))
         {
             var fileName = System.IO.Path.GetFileNameWithoutExtension(mediaPath);
@@ -300,6 +300,15 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         return info.Name?.Trim() ?? string.Empty;
+    }
+
+    private string FindMovieMediaPath(MovieInfo info)
+    {
+        return FindLibraryCandidates(info)
+            .OrderByDescending(candidate => ProviderIdsMatch(candidate, info))
+            .ThenByDescending(candidate => GetLibraryCandidateMatchScore(candidate, info))
+            .Select(candidate => candidate.Path)
+            .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
     }
 
     private static string GetRemoteSearchResultName(MovieSearchResult movie)
