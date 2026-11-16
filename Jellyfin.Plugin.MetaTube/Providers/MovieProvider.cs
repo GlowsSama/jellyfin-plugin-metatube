@@ -197,6 +197,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Plugin.ProviderId);
+        var searchKeyword = GetMovieSearchKeyword(info);
         var providerFilter = GetMovieProviderFilter(info)
             .Where(provider => !PluginConfiguration.IsJavDbProvider(provider))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -205,15 +206,17 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         var searchResults = new List<MovieSearchResult>();
         if (ShouldSearchByMovieName(pid))
         {
-            // Search movie by name.
-            Logger.Info("Search for movie: {0}", info.Name);
+            // Refresh from the media path so stale scraped titles cannot lock
+            // the item to a previously incorrect provider result.
+            Logger.Info("Search for movie by media path: {0} (metadata name: {1})",
+                searchKeyword, info.Name);
             var searchProviders = providerFilter.Any()
                 ? providerFilter
                 : Configuration.GetAllEnabledMovieProviders();
-            Logger.Info("Search movie {0} with providers: {1}", info.Name,
+            Logger.Info("Search movie {0} with providers: {1}", searchKeyword,
                 string.Join(',', searchProviders));
             searchResults.AddRange(
-                await SearchMoviesByProvidersAsync(info.Name, searchProviders, cancellationToken));
+                await SearchMoviesByProvidersAsync(searchKeyword, searchProviders, cancellationToken));
         }
         else
         {
@@ -230,15 +233,15 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         if (!searchResults.Any() && ShouldRetryWithAllEnabledMovieProviders() &&
-            !string.IsNullOrWhiteSpace(info.Name))
+            !string.IsNullOrWhiteSpace(searchKeyword))
         {
             Logger.Info(
                 "Custom movie providers returned no results for {0}; retrying with all enabled providers",
-                info.Name);
+                searchKeyword);
             var fallbackProviders = GetGlobalMovieProviderFilter();
             if (!fallbackProviders.Any())
                 fallbackProviders = Configuration.GetAllEnabledMovieProviders();
-            searchResults = await SearchMoviesByProvidersAsync(info.Name, fallbackProviders, cancellationToken);
+            searchResults = await SearchMoviesByProvidersAsync(searchKeyword, fallbackProviders, cancellationToken);
             searchResults = ApplyMovieProviderFilter(searchResults, fallbackProviders);
         }
 
@@ -274,6 +277,29 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                string.IsNullOrWhiteSpace(pid.Provider) ||
                PluginConfiguration.IsJavDbProvider(pid.Provider) ||
                pid.Update != true;
+    }
+
+    private static string GetMovieSearchKeyword(MovieInfo info)
+    {
+        var mediaPath = info.Path?.Trim();
+        if (!string.IsNullOrWhiteSpace(mediaPath))
+        {
+            var fileName = System.IO.Path.GetFileNameWithoutExtension(mediaPath);
+            var code = MediaCodePattern.Match(fileName ?? string.Empty);
+            if (code.Success)
+                return code.Value;
+
+            var directoryName = System.IO.Path.GetFileName(
+                System.IO.Path.GetDirectoryName(mediaPath) ?? string.Empty);
+            code = MediaCodePattern.Match(directoryName);
+            if (code.Success)
+                return code.Value;
+
+            if (!string.IsNullOrWhiteSpace(fileName))
+                return fileName;
+        }
+
+        return info.Name?.Trim() ?? string.Empty;
     }
 
     private static string GetRemoteSearchResultName(MovieSearchResult movie)
