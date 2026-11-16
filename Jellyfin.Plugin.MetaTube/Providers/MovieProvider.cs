@@ -31,6 +31,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 {
     private const string Gfriends = "Gfriends";
     private const string Rating = "JP-18+";
+    private const string Fanza = "FANZA";
 
     private static readonly Regex MediaCodePattern = new(
         @"(?<![A-Z0-9])(?<prefix>[A-Z][A-Z0-9]{1,15})[\s_-]*(?<number>\d{2,8})(?![A-Z0-9])",
@@ -310,7 +311,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             try
             {
                 var results = await ApiClient.SearchMovieAsync(keyword, provider, cancellationToken);
-                return results ?? new List<MovieSearchResult>();
+                return FilterInexactFanzaResults(keyword, provider, results);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -335,6 +336,40 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         return combined;
+    }
+
+    private static List<MovieSearchResult> FilterInexactFanzaResults(string keyword, string provider,
+        List<MovieSearchResult> results)
+    {
+        if (!string.Equals(provider, Fanza, StringComparison.OrdinalIgnoreCase) || results?.Any() != true)
+            return results ?? new List<MovieSearchResult>();
+
+        var target = GetComparableMediaCode(keyword);
+        if (string.IsNullOrWhiteSpace(target))
+            return results;
+
+        // FANZA may return nearby numbers (for example IPZ-371 through IPZ-379)
+        // when the requested title no longer exists. Keep an exact client-side
+        // guard so an older server image cannot surface those results in Emby.
+        return results
+            .Where(result => result != null &&
+                             (string.Equals(GetComparableMediaCode(result.Number), target,
+                                  StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(GetComparableMediaCode(result.Id), target,
+                                  StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private static string GetComparableMediaCode(string value)
+    {
+        var match = MediaCodePattern.Match(value ?? string.Empty);
+        if (!match.Success)
+            return string.Empty;
+
+        var number = match.Groups["number"].Value.TrimStart('0');
+        if (number.Length == 0)
+            number = "0";
+        return $"{match.Groups["prefix"].Value.ToUpperInvariant()}-{number}";
     }
 
     private IReadOnlyList<string> GetMovieProviderFilter(MovieInfo info)
