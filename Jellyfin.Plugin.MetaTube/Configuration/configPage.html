@@ -212,52 +212,6 @@
                         <div class="fieldDescription checkboxFieldDescription">开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。<br><br>关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-从JAVDB补充其他元数据获取。<br><br>从JAVDB获取的其他数据格式更统一更规整。</div>
                     </div>
 
-                    <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
-                        <summary>
-                            <span class="metaTubeProviderFilterSummaryText">
-                                <span class="inputLabel inputLabelUnfocused">从JAVDB补充其他元数据：</span>
-                                <span id="javDbReplacementFilterSummary">未选择其他元数据</span>
-                            </span>
-                            <span class="metaTubeProviderFilterCount" id="javDbReplacementFilterCount">已选择 0 个</span>
-                            <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
-                        </summary>
-                        <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="从JAVDB补充其他元数据"></div>
-                    </details>
-                    <div class="fieldDescription">对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。</div>
-                </div>
-
-                <div class="verticalSection">
-                    <h2 class="sectionTitle">JAVDB 其他元数据任务</h2>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
-                        <div class="fieldDescription" id="txtJavDbMetadataSuccessCount">0</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused">JAVDB 失败记录：</label>
-                        <div class="fieldDescription" id="txtJavDbMetadataFailureCount">0</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbMetadataFailureTasks">JAVDB 失败任务：</label>
-                        <textarea class="emby-input" id="txtJavDbMetadataFailureTasks" is="emby-input" name="txtJavDbMetadataFailureTasks" rows="12" spellcheck="false"></textarea>
-                        <div class="fieldDescription">
-                            每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除。
-                        </div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused">JAVDB 上次运行：</label>
-                        <div class="fieldDescription" id="txtJavDbMetadataLastRun">尚未运行</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused">JAVDB 上次模式：</label>
-                        <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
-                    </div>
-
-                    <div class="fieldDescription">运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。<br><br>如需再次全量运行点击下面“删除其它元数据”。</div>
                 </div>
 
                 <div class="verticalSection">
@@ -324,53 +278,6 @@
                         <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,AVMOO。媒体库名称支持空格、中文和 | 等符号。填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。</div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPrimaryDomain">JAVDB 主站域名：</label>
-                        <input id="txtJavDbPrimaryDomain" is="emby-input" name="txtJavDbPrimaryDomain" type="text"/>
-                        <div class="fieldDescription">留空使用 JAVDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只用于网页主站登录兜底。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbUsername">JAVDB 账号：</label>
-                        <input id="txtJavDbUsername" is="emby-input" name="txtJavDbUsername" type="text" autocomplete="username"/>
-                        <div class="fieldDescription">JAVDB 网页主站登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie 或 JAVDB API Token。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPassword">JAVDB 密码：</label>
-                        <input id="txtJavDbPassword" is="emby-input" name="txtJavDbPassword" type="password" autocomplete="new-password"/>
-                        <div class="fieldDescription">密码会通过当前 MetaTube 插件 HTTP 配置同步到服务端；请确保服务端地址仅在本机或可信局域网内使用。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbCookie">JAVDB Cookie：</label>
-                        <textarea class="emby-input" id="txtJavDbCookie" is="emby-input" name="txtJavDbCookie" rows="3" spellcheck="false" autocomplete="off"></textarea>
-                        <div class="fieldDescription">优先于网页账号密码。可从已登录浏览器复制完整 Cookie 请求头，例如 session=...; cf_clearance=...。Cookie 仅用于网页主站登录兜底，并会同步到 MetaTube 服务端。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbApiUrl">JAVDB API地址：</label>
-                        <input id="txtJavDbApiUrl" is="emby-input" name="txtJavDbApiUrl" type="url" inputmode="url" spellcheck="false"/>
-                        <div class="fieldDescription">JAVDB API 地址，默认 https://jdforrepam.com/api。仅在备用站明确要求登录时调用；普通网页请求和备用域名不会使用此地址。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbAuthorization">JAVDB API Token：</label>
-                        <textarea class="emby-input" id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" rows="3" spellcheck="false" autocomplete="off"></textarea>
-                        <div class="fieldDescription">可填写 Authorization、Bearer Token 或原始 Token。备用站明确要求登录时优先调用 JAVDB API；API 失败后才使用网页主站 Cookie 或账号密码。Token 不会发送到网页主站或备用域名。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JAVDB 备用域名：</label>
-                        <input id="txtJavDbBackupDomains" is="emby-input" name="txtJavDbBackupDomains" type="text"/>
-                        <div class="fieldDescription">按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtMissAvBackupDomains">MissAV 备用域名：</label>
-                        <input id="txtMissAvBackupDomains" is="emby-input" name="txtMissAvBackupDomains" type="text"/>
-                        <div class="fieldDescription">主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。</div>
-                    </div>
                 </div>
 
                 <div class="verticalSection">
@@ -487,7 +394,8 @@
                     </div>
                 </div>
 
-                <div class="verticalSection">
+                <!-- Temporarily hidden until substitution configuration is ready. -->
+                <div class="verticalSection" style="display: none;">
                     <h2 class="sectionTitle">Substitution</h2>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -530,6 +438,101 @@
                         <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtGenreRawSubstitutionTable">Genre substitution table:</label>
                         <textarea class="emby-input" id="txtGenreRawSubstitutionTable" is="emby-input" name="txtGenreRawSubstitutionTable" rows="5"></textarea>
                         <div class="fieldDescription">One record per line, separated by equal signs. Leave the target genre blank to delete the source genre.</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">JAVDB</h2>
+
+                    <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
+                        <summary>
+                            <span class="metaTubeProviderFilterSummaryText">
+                                <span class="inputLabel inputLabelUnfocused">从JAVDB补充其他元数据：</span>
+                                <span id="javDbReplacementFilterSummary">未选择其他元数据</span>
+                            </span>
+                            <span class="metaTubeProviderFilterCount" id="javDbReplacementFilterCount">已选择 0 个</span>
+                            <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
+                        </summary>
+                        <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="从JAVDB补充其他元数据"></div>
+                    </details>
+                    <div class="fieldDescription">对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPrimaryDomain">JAVDB 主站域名：</label>
+                        <input id="txtJavDbPrimaryDomain" is="emby-input" name="txtJavDbPrimaryDomain" type="text"/>
+                        <div class="fieldDescription">留空使用 JAVDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只用于网页主站登录兜底。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbUsername">JAVDB 账号：</label>
+                        <input id="txtJavDbUsername" is="emby-input" name="txtJavDbUsername" type="text" autocomplete="username"/>
+                        <div class="fieldDescription">JAVDB 网页主站登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie 或 JAVDB API Token。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPassword">JAVDB 密码：</label>
+                        <input id="txtJavDbPassword" is="emby-input" name="txtJavDbPassword" type="password" autocomplete="new-password"/>
+                        <div class="fieldDescription">密码会通过当前 MetaTube 插件 HTTP 配置同步到服务端；请确保服务端地址仅在本机或可信局域网内使用。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbCookie">JAVDB Cookie：</label>
+                        <textarea class="emby-input" id="txtJavDbCookie" is="emby-input" name="txtJavDbCookie" rows="3" spellcheck="false" autocomplete="off"></textarea>
+                        <div class="fieldDescription">优先于网页账号密码。可从已登录浏览器复制完整 Cookie 请求头，例如 session=...; cf_clearance=...。Cookie 仅用于网页主站登录兜底，并会同步到 MetaTube 服务端。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbApiUrl">JAVDB API地址：</label>
+                        <input id="txtJavDbApiUrl" is="emby-input" name="txtJavDbApiUrl" type="url" inputmode="url" spellcheck="false"/>
+                        <div class="fieldDescription">JAVDB API 地址，默认 https://jdforrepam.com/api。仅在备用站明确要求登录时调用；普通网页请求和备用域名不会使用此地址。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbAuthorization">JAVDB API Token：</label>
+                        <textarea class="emby-input" id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" rows="3" spellcheck="false" autocomplete="off"></textarea>
+                        <div class="fieldDescription">可填写 Authorization、Bearer Token 或原始 Token。备用站明确要求登录时优先调用 JAVDB API；API 失败后才使用网页主站 Cookie 或账号密码。Token 不会发送到网页主站或备用域名。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JAVDB 备用域名：</label>
+                        <input id="txtJavDbBackupDomains" is="emby-input" name="txtJavDbBackupDomains" type="text"/>
+                        <div class="fieldDescription">按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。</div>
+                    </div>
+
+                    <div class="inputContainer" style="display: none;">
+                        <label class="inputLabel inputLabelUnfocused" for="txtMissAvBackupDomains">MissAV 备用域名：</label>
+                        <input id="txtMissAvBackupDomains" is="emby-input" name="txtMissAvBackupDomains" type="text"/>
+                        <div class="fieldDescription">主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 成功记录：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataSuccessCount">0</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 失败记录：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataFailureCount">0</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 上次运行：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataLastRun">尚未运行</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused">JAVDB 上次模式：</label>
+                        <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
+                    </div>
+
+                    <div class="fieldDescription">运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。<br><br>如需再次全量运行点击下面“删除其它元数据”。</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbMetadataFailureTasks">JAVDB 失败任务：</label>
+                        <textarea class="emby-input" id="txtJavDbMetadataFailureTasks" is="emby-input" name="txtJavDbMetadataFailureTasks" rows="12" spellcheck="false"></textarea>
+                        <div class="fieldDescription">
+                            每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除。
+                        </div>
                     </div>
                 </div>
 

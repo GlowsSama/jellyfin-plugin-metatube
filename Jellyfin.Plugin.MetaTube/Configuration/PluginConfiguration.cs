@@ -115,132 +115,6 @@ public class PluginConfiguration : BasePluginConfiguration
 #endif
     public bool ReplaceJavDbReleaseDate { get; set; } = false;
 
-#if __EMBY__
-    [DisplayName("从JAVDB补充其他元数据")]
-    [Description("对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。")]
-    [EditMultilSelect]
-    [SelectItemsSource(nameof(JavDbReplacementOptions))]
-#endif
-    public string RawJavDbReplacementFilter
-    {
-        get
-        {
-            var selected = new List<string>();
-            if (ReplaceJavDbGenres) selected.Add("genres");
-            if (ReplaceJavDbTags) selected.Add("tags");
-            if (ReplaceJavDbStudios) selected.Add("studios");
-            if (ReplaceJavDbActors) selected.Add("actors");
-            if (ReplaceJavDbDirectors) selected.Add("directors");
-            if (ReplaceJavDbRating) selected.Add("rating");
-            if (ReplaceJavDbReleaseDate) selected.Add("releaseDate");
-            return string.Join(',', selected);
-        }
-        set
-        {
-            var selected = new HashSet<string>(
-                (value ?? string.Empty).Split(',').Select(item => item.Trim()).Where(item => item.Any()),
-                StringComparer.OrdinalIgnoreCase);
-            ReplaceJavDbGenres = selected.Contains("genres");
-            ReplaceJavDbTags = selected.Contains("tags");
-            ReplaceJavDbStudios = selected.Contains("studios");
-            ReplaceJavDbActors = selected.Contains("actors");
-            ReplaceJavDbDirectors = selected.Contains("directors");
-            ReplaceJavDbRating = selected.Contains("rating");
-            ReplaceJavDbReleaseDate = selected.Contains("releaseDate");
-        }
-    }
-
-#if __EMBY__
-    [Browsable(false)]
-    public List<EditorSelectOption> JavDbReplacementOptions => new()
-    {
-        new EditorSelectOption { Name = "流派(标签)", Value = "genres", IsEnabled = true },
-        new EditorSelectOption { Name = "标签(系列)", Value = "tags", IsEnabled = true },
-        new EditorSelectOption { Name = "工作室(厂牌,发行商)", Value = "studios", IsEnabled = true },
-        new EditorSelectOption { Name = "演员名字", Value = "actors", IsEnabled = true },
-        new EditorSelectOption { Name = "导演信息", Value = "directors", IsEnabled = true },
-        new EditorSelectOption { Name = "评分", Value = "rating", IsEnabled = true },
-        new EditorSelectOption { Name = "发行时间", Value = "releaseDate", IsEnabled = true }
-    };
-#endif
-
-#if __EMBY__
-    [DisplayName("JAVDB 成功记录")]
-    [Description("只读统计。成功记录保存在插件配置目录的 JSON 状态文件中，最多保留 10000 条。")]
-    [ReadOnly(true)]
-#endif
-    public int JavDbMetadataSuccessCount => GetJavDbMetadataSummary().SuccessCount;
-
-#if __EMBY__
-    [DisplayName("JAVDB 失败记录")]
-    [Description("只读统计。可在下方失败任务文本框中编辑、映射或删除任务，最多保留 10000 条。")]
-    [ReadOnly(true)]
-#endif
-    public int JavDbMetadataFailureCount => GetJavDbMetadataSummary().FailureCount;
-
-#if __EMBY__
-    [Browsable(false)]
-#endif
-    public string JavDbMetadataFailureEditor { get; set; } = string.Empty;
-
-#if __EMBY__
-    [Browsable(false)]
-#endif
-    public bool JavDbMetadataFailureEditorDirty { get; set; } = false;
-
-#if __EMBY__
-    [DisplayName("JAVDB 失败任务")]
-    [Description(
-        "每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除，纯数字来源内部 ID 会被自动忽略。")]
-    [EditMultiline(12)]
-#endif
-    public string JavDbMetadataFailureTaskText
-    {
-        get
-        {
-            if (JavDbMetadataFailureEditorDirty)
-                return JavDbMetadataFailureEditor ?? string.Empty;
-
-            return JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
-        }
-        set
-        {
-            var text = value ?? string.Empty;
-            JavDbMetadataFailureEditor = text;
-            var currentText = JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
-            JavDbMetadataFailureEditorDirty = !string.Equals(text, currentText, StringComparison.Ordinal);
-        }
-    }
-
-#if __EMBY__
-    [DisplayName("JAVDB 上次运行")]
-    [Description("只读统计。时间按 Emby 服务器本地时区显示。")]
-    [ReadOnly(true)]
-#endif
-    public string JavDbMetadataLastRun => FormatJavDbMetadataLastRun(GetJavDbMetadataSummary().LastRunAtUtc);
-
-#if __EMBY__
-    [DisplayName("JAVDB 上次模式")]
-    [Description("只读统计。显示上一次任务执行的是全量替换还是增量补全。")]
-    [ReadOnly(true)]
-#endif
-    public string JavDbMetadataLastMode => FormatJavDbMetadataLastMode(GetJavDbMetadataSummary().LastRunMode);
-
-#if __EMBY__
-    [Browsable(false)]
-#endif
-    public string JavDbMetadataSuccessRecords { get; set; } = string.Empty;
-
-#if __EMBY__
-    [Browsable(false)]
-#endif
-    public string JavDbMetadataFailureRecords { get; set; } = string.Empty;
-
-#if __EMBY__
-    [Browsable(false)]
-#endif
-    public bool JavDbMetadataRecordsInitialized { get; set; } = false;
-
     private JavDbMetadataSummary GetJavDbMetadataSummary()
     {
         var state = LoadJavDbMetadataState();
@@ -526,57 +400,6 @@ public class PluginConfiguration : BasePluginConfiguration
     private List<string> _movieProviderFilter;
 
 #if __EMBY__
-    [DisplayName("JAVDB 主站域名")]
-    [Description(
-        "留空使用 JAVDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只同步到网页主站。")]
-#endif
-    public string JavDbPrimaryDomain { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB 账号")]
-    [Description("JAVDB 网页主站登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。")]
-#endif
-    public string JavDbUsername { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB 密码")]
-    [Description("JAVDB 登录密码。凭据会通过当前 MetaTube 插件 HTTP 配置同步到服务端。")]
-#endif
-    public string JavDbPassword { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB Cookie")]
-    [Description("优先于网页账号密码。可从已登录浏览器复制完整 Cookie 请求头；仅在网页主站登录兜底时使用。")]
-#endif
-    public string JavDbCookie { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB API地址")]
-    [Description(
-        "JAVDB API 地址，默认 https://jdforrepam.com/api。普通网页请求和备用域名不会使用此地址。")]
-#endif
-    public string JavDbApiUrl { get; set; } = "https://jdforrepam.com/api";
-
-#if __EMBY__
-    [DisplayName("JAVDB API Token")]
-    [Description(
-        "可填写 Authorization、Bearer Token 或原始 Token。备用站明确要求登录时优先调用 JAVDB API；API 失败后才使用网页主站 Cookie 或账号密码。Token 不会发送到网页主站或备用域名。")]
-#endif
-    public string JavDbAuthorization { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB 备用域名")]
-    [Description("按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。")]
-#endif
-    public string JavDbBackupDomains { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("MissAV 备用域名")]
-    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。")]
-#endif
-    public string MissAvBackupDomains { get; set; } = string.Empty;
-
-#if __EMBY__
     [DisplayName("启用模板")]
 #endif
     public bool EnableTemplate { get; set; } = false;
@@ -672,7 +495,186 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
+    [DisplayName("从JAVDB补充其他元数据")]
+    [Description("对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。")]
+    [EditMultilSelect]
+    [SelectItemsSource(nameof(JavDbReplacementOptions))]
+#endif
+    public string RawJavDbReplacementFilter
+    {
+        get
+        {
+            var selected = new List<string>();
+            if (ReplaceJavDbGenres) selected.Add("genres");
+            if (ReplaceJavDbTags) selected.Add("tags");
+            if (ReplaceJavDbStudios) selected.Add("studios");
+            if (ReplaceJavDbActors) selected.Add("actors");
+            if (ReplaceJavDbDirectors) selected.Add("directors");
+            if (ReplaceJavDbRating) selected.Add("rating");
+            if (ReplaceJavDbReleaseDate) selected.Add("releaseDate");
+            return string.Join(',', selected);
+        }
+        set
+        {
+            var selected = new HashSet<string>(
+                (value ?? string.Empty).Split(',').Select(item => item.Trim()).Where(item => item.Any()),
+                StringComparer.OrdinalIgnoreCase);
+            ReplaceJavDbGenres = selected.Contains("genres");
+            ReplaceJavDbTags = selected.Contains("tags");
+            ReplaceJavDbStudios = selected.Contains("studios");
+            ReplaceJavDbActors = selected.Contains("actors");
+            ReplaceJavDbDirectors = selected.Contains("directors");
+            ReplaceJavDbRating = selected.Contains("rating");
+            ReplaceJavDbReleaseDate = selected.Contains("releaseDate");
+        }
+    }
+
+#if __EMBY__
+    [Browsable(false)]
+    public List<EditorSelectOption> JavDbReplacementOptions => new()
+    {
+        new EditorSelectOption { Name = "流派(标签)", Value = "genres", IsEnabled = true },
+        new EditorSelectOption { Name = "标签(系列)", Value = "tags", IsEnabled = true },
+        new EditorSelectOption { Name = "工作室(厂牌,发行商)", Value = "studios", IsEnabled = true },
+        new EditorSelectOption { Name = "演员名字", Value = "actors", IsEnabled = true },
+        new EditorSelectOption { Name = "导演信息", Value = "directors", IsEnabled = true },
+        new EditorSelectOption { Name = "评分", Value = "rating", IsEnabled = true },
+        new EditorSelectOption { Name = "发行时间", Value = "releaseDate", IsEnabled = true }
+    };
+#endif
+
+#if __EMBY__
+    [DisplayName("JAVDB 主站域名")]
+    [Description(
+        "留空使用 JAVDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只同步到网页主站。")]
+#endif
+    public string JavDbPrimaryDomain { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB 账号")]
+    [Description("JAVDB 网页主站登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。")]
+#endif
+    public string JavDbUsername { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB 密码")]
+    [Description("JAVDB 登录密码。凭据会通过当前 MetaTube 插件 HTTP 配置同步到服务端。")]
+#endif
+    public string JavDbPassword { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB Cookie")]
+    [Description("优先于网页账号密码。可从已登录浏览器复制完整 Cookie 请求头；仅在网页主站登录兜底时使用。")]
+#endif
+    public string JavDbCookie { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB API地址")]
+    [Description(
+        "JAVDB API 地址，默认 https://jdforrepam.com/api。普通网页请求和备用域名不会使用此地址。")]
+#endif
+    public string JavDbApiUrl { get; set; } = "https://jdforrepam.com/api";
+
+#if __EMBY__
+    [DisplayName("JAVDB API Token")]
+    [Description(
+        "可填写 Authorization、Bearer Token 或原始 Token。备用站明确要求登录时优先调用 JAVDB API；API 失败后才使用网页主站 Cookie 或账号密码。Token 不会发送到网页主站或备用域名。")]
+#endif
+    public string JavDbAuthorization { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB 备用域名")]
+    [Description("按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。")]
+#endif
+    public string JavDbBackupDomains { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("MissAV 备用域名")]
+    [Description("主域名不可用时按顺序尝试。多个域名使用英文逗号分隔。")]
+    [Browsable(false)]
+#endif
+    public string MissAvBackupDomains { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("JAVDB 成功记录")]
+    [Description("只读统计。成功记录保存在插件配置目录的 JSON 状态文件中，最多保留 10000 条。")]
+    [ReadOnly(true)]
+#endif
+    public int JavDbMetadataSuccessCount => GetJavDbMetadataSummary().SuccessCount;
+
+#if __EMBY__
+    [DisplayName("JAVDB 失败记录")]
+    [Description("只读统计。可在下方失败任务文本框中编辑、映射或删除任务，最多保留 10000 条。")]
+    [ReadOnly(true)]
+#endif
+    public int JavDbMetadataFailureCount => GetJavDbMetadataSummary().FailureCount;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public string JavDbMetadataFailureEditor { get; set; } = string.Empty;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public bool JavDbMetadataFailureEditorDirty { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("JAVDB 上次运行")]
+    [Description("只读统计。时间按 Emby 服务器本地时区显示。")]
+    [ReadOnly(true)]
+#endif
+    public string JavDbMetadataLastRun => FormatJavDbMetadataLastRun(GetJavDbMetadataSummary().LastRunAtUtc);
+
+#if __EMBY__
+    [DisplayName("JAVDB 上次模式")]
+    [Description("只读统计。显示上一次任务执行的是全量替换还是增量补全。")]
+    [ReadOnly(true)]
+#endif
+    public string JavDbMetadataLastMode => FormatJavDbMetadataLastMode(GetJavDbMetadataSummary().LastRunMode);
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public string JavDbMetadataSuccessRecords { get; set; } = string.Empty;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public string JavDbMetadataFailureRecords { get; set; } = string.Empty;
+
+#if __EMBY__
+    [Browsable(false)]
+#endif
+    public bool JavDbMetadataRecordsInitialized { get; set; } = false;
+
+#if __EMBY__
+    [DisplayName("JAVDB 失败任务")]
+    [Description(
+        "每行一个失败任务，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除，纯数字来源内部 ID 会被自动忽略。")]
+    [EditMultiline(12)]
+#endif
+    public string JavDbMetadataFailureTaskText
+    {
+        get
+        {
+            if (JavDbMetadataFailureEditorDirty)
+                return JavDbMetadataFailureEditor ?? string.Empty;
+
+            return JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
+        }
+        set
+        {
+            var text = value ?? string.Empty;
+            JavDbMetadataFailureEditor = text;
+            var currentText = JavDbMetadataStateStore.GetFailureEditorText(LoadJavDbMetadataState());
+            JavDbMetadataFailureEditorDirty = !string.Equals(text, currentText, StringComparison.Ordinal);
+        }
+    }
+
+#if __EMBY__
     [DisplayName("启用标题替换")]
+    [Browsable(false)]
 #endif
     public bool EnableTitleSubstitution { get; set; } = false;
 
@@ -681,6 +683,7 @@ public class PluginConfiguration : BasePluginConfiguration
     [Description(
         "每行一条记录，以等号分隔。目标子串留空时将删除来源子串。")]
     [EditMultiline(5)]
+    [Browsable(false)]
 #endif
     public string TitleRawSubstitutionTable
     {
@@ -697,6 +700,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("启用演员替换")]
+    [Browsable(false)]
 #endif
     public bool EnableActorSubstitution { get; set; } = false;
 
@@ -705,6 +709,7 @@ public class PluginConfiguration : BasePluginConfiguration
     [Description(
         "每行一条记录，以等号分隔。目标演员留空时将删除来源演员。")]
     [EditMultiline(5)]
+    [Browsable(false)]
 #endif
     public string ActorRawSubstitutionTable
     {
@@ -721,6 +726,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("启用类型替换")]
+    [Browsable(false)]
 #endif
     public bool EnableGenreSubstitution { get; set; } = false;
 
@@ -729,6 +735,7 @@ public class PluginConfiguration : BasePluginConfiguration
     [Description(
         "每行一条记录，以等号分隔。目标类型留空时将删除来源类型。")]
     [EditMultiline(5)]
+    [Browsable(false)]
 #endif
     public string GenreRawSubstitutionTable
     {
