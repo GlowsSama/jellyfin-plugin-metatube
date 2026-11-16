@@ -174,6 +174,7 @@ internal static class JavDbMetadataStateStore
 
         var result = new JavDbFailureEditorApplyResult();
         var now = DateTimeOffset.UtcNow;
+        var existingSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var record in state.Failures.ToList())
         {
             var source = GetSourceKeyword(record);
@@ -183,6 +184,7 @@ internal static class JavDbMetadataStateStore
                 continue;
             }
 
+            existingSources.Add(source);
             if (requests.TryGetValue(source, out var target))
             {
                 record.SourceKeyword = source;
@@ -200,6 +202,22 @@ internal static class JavDbMetadataStateStore
             state.Successes.RemoveAll(success => GetRecordKey(success) == GetRecordKey(record));
             state.Successes.Add(record);
             result.Completed++;
+        }
+
+        foreach (var request in requests)
+        {
+            if (existingSources.Contains(request.Key) || IsNumericOnly(request.Key))
+                continue;
+
+            state.Failures.Add(new JavDbMetadataRecord
+            {
+                SourceKeyword = request.Key,
+                Keyword = request.Value,
+                Message = "manual_pending: added from the JAVDB failure task list",
+                FailureKind = "manual_pending",
+                UpdatedAtUtc = now
+            });
+            result.Added++;
         }
 
         NormalizeState(state);
@@ -403,6 +421,8 @@ internal static class JavDbMetadataStateStore
 internal sealed class JavDbFailureEditorApplyResult
 {
     public int Updated { get; set; }
+
+    public int Added { get; set; }
 
     public int Completed { get; set; }
 

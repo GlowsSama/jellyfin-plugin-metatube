@@ -33,6 +33,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     private static readonly Regex Fc2NumberPattern = new(
         @"(?i)(?<![A-Z0-9])FC2(?:[-_\s]?PPV)?[-_\s]?(?<number>\d{5,})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex TokyoHotNumberPattern = new(
+        @"(?i)(?<![A-Z0-9])N[-_\s]?(?<number>\d{4})(?![A-Z0-9])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex SpecialNumberPattern = new(
         @"(?i)(?<![A-Z0-9])(?<number>(?:HEYZO[-_\s]\d{4,6}|HEYDOUGA[-_\s]\d{4,6}[-_]\d{1,6}|MKBD[-_\s]?S\d{1,5}|MXNB[-_\s]\d{1,6}[A-Z]|\d{6}[-_]\d{3}))(?![A-Z0-9])",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -470,8 +473,8 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 configuration.JavDbMetadataFailureEditorDirty = false;
                 Plugin.Instance.SaveConfiguration(configuration);
                 _logger.Info(
-                    "JAVDB 失败任务清单已应用 | 修改映射={0} | 标记完成={1} | 保持不变={2}",
-                    result.Updated, result.Completed, result.Unchanged);
+                    "JAVDB 失败任务清单已应用 | 新增任务={0} | 修改映射={1} | 标记完成={2} | 保持不变={3}",
+                    result.Added, result.Updated, result.Completed, result.Unchanged);
             }
             catch (Exception exception)
             {
@@ -530,7 +533,8 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         if (!string.IsNullOrWhiteSpace(record.ItemId))
             return string.Equals(record.ItemId, item.Id.ToString("N"), StringComparison.OrdinalIgnoreCase);
 
-        return string.Equals(record.Keyword, keyword, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(record.Keyword, keyword, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(record.SourceKeyword, keyword, StringComparison.OrdinalIgnoreCase);
     }
 
     internal static string GetJavDbKeyword(BaseItem item)
@@ -573,6 +577,10 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         var fc2Match = Fc2NumberPattern.Match(value);
         if (fc2Match.Success)
             AddNumberVariants(candidates, $"FC2-{fc2Match.Groups["number"].Value}");
+
+        var tokyoHotMatch = TokyoHotNumberPattern.Match(value);
+        if (tokyoHotMatch.Success)
+            AddNumberVariants(candidates, $"N{tokyoHotMatch.Groups["number"].Value}");
 
         var specialMatches = SpecialNumberPattern.Matches(value).Cast<Match>().ToList();
         foreach (var specialMatch in specialMatches)
