@@ -311,7 +311,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             try
             {
                 var results = await ApiClient.SearchMovieAsync(keyword, provider, cancellationToken);
-                return FilterInexactFanzaResults(keyword, provider, results);
+                return results ?? new List<MovieSearchResult>();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -335,13 +335,24 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 combined.Add(result);
         }
 
-        return combined;
+        var fanzaResultCount = combined.Count(result =>
+            string.Equals(result.Provider, Fanza, StringComparison.OrdinalIgnoreCase));
+        var filtered = FilterInexactFanzaResults(keyword, combined);
+        var filteredFanzaResultCount = filtered.Count(result =>
+            string.Equals(result.Provider, Fanza, StringComparison.OrdinalIgnoreCase));
+        if (filteredFanzaResultCount != fanzaResultCount)
+        {
+            Logger.Info("Filtered inexact FANZA results for {0}: {1} -> {2}", keyword,
+                fanzaResultCount, filteredFanzaResultCount);
+        }
+
+        return filtered;
     }
 
-    private static List<MovieSearchResult> FilterInexactFanzaResults(string keyword, string provider,
+    private static List<MovieSearchResult> FilterInexactFanzaResults(string keyword,
         List<MovieSearchResult> results)
     {
-        if (!string.Equals(provider, Fanza, StringComparison.OrdinalIgnoreCase) || results?.Any() != true)
+        if (results?.Any() != true)
             return results ?? new List<MovieSearchResult>();
 
         var target = GetComparableMediaCode(keyword);
@@ -353,7 +364,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         // guard so an older server image cannot surface those results in Emby.
         return results
             .Where(result => result != null &&
-                             (string.Equals(GetComparableMediaCode(result.Number), target,
+                             (!string.Equals(result.Provider, Fanza, StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(GetComparableMediaCode(result.Number), target,
                                   StringComparison.OrdinalIgnoreCase) ||
                               string.Equals(GetComparableMediaCode(result.Id), target,
                                   StringComparison.OrdinalIgnoreCase)))
