@@ -209,7 +209,7 @@
                             <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
                             <span>仅获取基础元数据 (建议关闭)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。<br><br>关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-从JAVDB补充其他元数据获取。<br><br>从JAVDB获取的其他数据格式更统一更规整。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。<br><br>关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-补充其他元数据获取。<br><br>从JAVDB获取的其他数据格式更统一更规整。</div>
                     </div>
 
                 </div>
@@ -269,7 +269,7 @@
                             <input id="chkEnableLibraryProviderFilter" is="emby-checkbox" name="chkEnableLibraryProviderFilter" type="checkbox"/>
                             <span>启用媒体库自定义刮削源</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。只要填写了有效规则，“从JAVDB补充其他元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。</div>
+                        <div class="fieldDescription checkboxFieldDescription">匹配媒体库使用对应来源；未匹配的媒体库继续使用全局来源过滤。只要填写了有效规则，“补充其他元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。</div>
                     </div>
 
                     <div class="inputContainer">
@@ -447,15 +447,15 @@
                     <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
                         <summary>
                             <span class="metaTubeProviderFilterSummaryText">
-                                <span class="inputLabel inputLabelUnfocused">从JAVDB补充其他元数据：</span>
+                                <span class="inputLabel inputLabelUnfocused">补充其他元数据：</span>
                                 <span id="javDbReplacementFilterSummary">未选择其他元数据</span>
                             </span>
                             <span class="metaTubeProviderFilterCount" id="javDbReplacementFilterCount">已选择 0 个</span>
                             <span class="metaTubeProviderFilterChevron" aria-hidden="true"></span>
                         </summary>
-                        <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="从JAVDB补充其他元数据"></div>
+                        <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="补充其他元数据"></div>
                     </details>
-                    <div class="fieldDescription">对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。</div>
+                    <div class="fieldDescription">对应计划任务“补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbPrimaryDomain">JAVDB 主站域名：</label>

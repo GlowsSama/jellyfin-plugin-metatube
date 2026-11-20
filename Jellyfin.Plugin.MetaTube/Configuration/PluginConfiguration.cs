@@ -62,7 +62,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("仅获取基础元数据 (建议关闭)")]
-    [Description("开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。\n\n关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-从JAVDB补充其他元数据获取。\n\n从JAVDB获取的其他数据格式更统一更规整。")]
+    [Description("开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。\n\n关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-补充其他元数据获取。\n\n从JAVDB获取的其他数据格式更统一更规整。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
@@ -211,7 +211,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("启用媒体库自定义刮削源")]
     [Description(
-        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。只要填写了有效规则，“从JAVDB补充其他元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。")]
+        "启用后，匹配媒体库使用对应来源；媒体库名称匹配会忽略空格和标点。只要填写了有效规则，“补充其他元数据”和“删除其它元数据”也只处理这些媒体库；未填写规则时保持全库范围。")]
 #endif
     public bool EnableLibraryProviderFilter { get; set; } = false;
 
@@ -495,8 +495,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("从JAVDB补充其他元数据")]
-    [Description("对应计划任务“从JAVDB补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。")]
+    [DisplayName("补充其他元数据")]
+    [Description("对应计划任务“补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif

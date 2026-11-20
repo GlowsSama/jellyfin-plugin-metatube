@@ -1208,7 +1208,7 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "从JAVDB补充其他元数据";
+        "补充其他元数据";
 #else
         "Replace Other Metadata from JAVDB";
 #endif

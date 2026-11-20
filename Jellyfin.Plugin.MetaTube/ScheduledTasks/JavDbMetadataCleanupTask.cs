@@ -51,7 +51,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
 
     public string Description =>
 #if __EMBY__
-        "手动删除所有影片的流派、标签、工作室、评分和导演等其它元数据，同时清空 JAVDB 处理记录。演员和发行时间属于基础元数据，将保持不变。处理记录清空后，下一次“从JAVDB补充其他元数据”会执行全量替换。";
+        "手动删除所有影片的流派、标签、工作室、评分和导演等其它元数据，同时清空 JAVDB 处理记录。演员和发行时间属于基础元数据，将保持不变。处理记录清空后，下一次“补充其他元数据”会执行全量替换。";
 #else
         "Deletes other metadata such as genres, tags, studios, ratings and directors, then resets the JAVDB success and failure records. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Actors and release dates are basic metadata and remain unchanged. After the records are cleared, the next “Replace Other Metadata from JAVDB” run performs a full replacement. This task does not request JAVDB or automatically rescrape movies.";
 #endif
@@ -158,7 +158,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
         configuration.JavDbMetadataRecordsInitialized = true;
         Plugin.Instance.SaveConfiguration(configuration);
 
-        _logger.Info("JAVDB 处理记录已清空 | 下一次“从JAVDB补充其他元数据”将执行全量替换");
+        _logger.Info("JAVDB 处理记录已清空 | 下一次“补充其他元数据”将执行全量替换");
     }
 
     private async Task ApplyMetadataAsync(
