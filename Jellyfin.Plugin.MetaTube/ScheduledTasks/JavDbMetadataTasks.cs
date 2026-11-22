@@ -140,13 +140,23 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
         var libraryScope = JavDbLibraryScope.Filter(
             _libraryManager, allItems, configuration.GetLibraryProviderFilters());
-        var plan = JavDbMetadataSyncPlanner.Create(libraryScope.Items, state, GetJavDbKeyword);
+        var plan = JavDbMetadataSyncPlanner.Create(
+            libraryScope.Items, state, GetJavDbKeyword, selection.Genres);
+        var clearedCompletedFailures = RemoveCompletedGenreFailures(state, plan.GenreCompletedItems);
+        if (clearedCompletedFailures > 0)
+        {
+            _logger.Info(
+                "JAVDB 已完成影片的失败记录清理 | 流派非空项目={0} | 移除失败记录={1}",
+                plan.GenreCompletedItems.Count, clearedCompletedFailures);
+        }
+
         var itemList = plan.PendingItems;
         _logger.Info(
-            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 全库影片={3} | 媒体库范围={4} | 范围内影片={5} | 媒体库范围跳过={6} | 无番号跳过={7} | 记录跳过={8} | 待处理={9} | 成功记录={10} | 失败记录={11}",
+            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 全库影片={3} | 媒体库范围={4} | 范围内影片={5} | 媒体库范围跳过={6} | 无番号跳过={7} | 记录跳过={8} | 流派非空跳过={9} | 流派为空待补={10} | 待处理={11} | 成功记录={12} | 失败记录={13}",
             plan.ModeLabel, plan.ModeReason, selection.Signature, allItems.Count, libraryScope.Description,
             libraryScope.Items.Count, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
-            plan.SkippedByStateCount, itemList.Count, state.Successes.Count, state.Failures.Count);
+            plan.SkippedByStateCount, plan.SkippedByGenreCount, plan.PendingByEmptyGenreCount,
+            itemList.Count, state.Successes.Count, state.Failures.Count);
         progress?.Report(0);
 
         var updated = 0;
@@ -401,9 +411,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         _logger.Info(
-            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 媒体库范围跳过={3} | 无番号跳过={4} | 记录跳过={5} | 状态文件={6}",
+            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 媒体库范围跳过={3} | 无番号跳过={4} | 记录跳过={5} | 流派非空跳过={6} | 状态文件={7}",
             plan.ModeLabel, updated, failed, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
-            plan.SkippedByStateCount, _stateFilePath);
+            plan.SkippedByStateCount, plan.SkippedByGenreCount, _stateFilePath);
         progress?.Report(100);
     }
 
@@ -420,6 +430,28 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             _logger.Error("Write JAVDB metadata task state failed: {0}", exception.Message);
             return false;
         }
+    }
+
+    private static int RemoveCompletedGenreFailures(
+        JavDbMetadataState state,
+        IEnumerable<BaseItem> completedItems)
+    {
+        var items = (completedItems ?? Enumerable.Empty<BaseItem>()).ToList();
+        if (state?.Failures == null || items.Count == 0)
+            return 0;
+
+        var itemIds = items
+            .Select(item => item.Id.ToString("N"))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var keywords = items
+            .SelectMany(GetJavDbKeywords)
+            .Where(keyword => !string.IsNullOrWhiteSpace(keyword))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return state.Failures.RemoveAll(record =>
+            (!string.IsNullOrWhiteSpace(record.ItemId) && itemIds.Contains(record.ItemId)) ||
+            (!string.IsNullOrWhiteSpace(record.Keyword) && keywords.Contains(record.Keyword)) ||
+            (!string.IsNullOrWhiteSpace(record.SourceKeyword) && keywords.Contains(record.SourceKeyword)));
     }
 
     private static void RecordOutcome(
@@ -1215,9 +1247,9 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。失败任务可在插件设置中的失败任务文本框里映射番号，删除对应行则标记为完成。\n\n如需再次全量运行点击下面“删除其它元数据”。";
+        "运行时会删除旧数据替换新数据。没有处理记录或替换项目发生变化时执行全量；之后执行增量时，会检查媒体库或 NFO 已载入的“流派”字段：流派非空视为已补充并跳过，流派为空或属于失败记录时才请求 JAVDB。主站拒绝请求时自动切换备用站点。失败任务可在插件设置中的失败任务文本框里映射番号，删除对应行则标记为完成。\n\n如需再次全量运行点击下面“删除其它元数据”。";
 #else
-        "Replaces only the other metadata fields selected in the plugin settings. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change; otherwise only new items and previous failures are processed. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Each movie-number task is followed by a 10-second interval. A failed domain is retried twice before rotating to the next backup. If every domain fails, cooldowns escalate through 15, 30, 60 and 120 minutes.";
+        "Replaces only the other metadata fields selected in the plugin settings. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change. Otherwise, when genres are selected, incremental runs treat a non-empty genre list as already completed and process items whose genres are empty, along with previous failures. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Each movie-number task is followed by a 10-second interval. A failed domain is retried twice before rotating to the next backup. If every domain fails, cooldowns escalate through 15, 30, 60 and 120 minutes.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

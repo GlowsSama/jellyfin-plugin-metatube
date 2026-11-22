@@ -525,7 +525,7 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">运行时会删除旧数据替换新数据，首次运行时为全量运行，之后为增量补充，主站拒绝请求时自动切换备用站点。<br><br>如需再次全量运行点击下面“删除其它元数据”。</div>
+                    <div class="fieldDescription">运行时会删除旧数据替换新数据。没有处理记录或替换项目发生变化时执行全量；之后执行增量时，会检查媒体库或 NFO 已载入的“流派”字段：流派非空视为已补充并跳过，流派为空或属于失败记录时才请求 JAVDB。<br><br>主站拒绝请求时自动切换备用站点。如需再次全量运行，点击下面“删除其它元数据”。</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbMetadataFailureTasks">JAVDB 失败任务：</label>
