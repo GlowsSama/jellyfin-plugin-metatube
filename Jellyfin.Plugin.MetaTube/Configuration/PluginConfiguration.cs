@@ -490,7 +490,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("不获取其它元数据 (建议关闭)")]
+    [DisplayName("只从JAVDB获取其它元数据")]
     [Description("开启后仅使用来源站点的基础元数据，下方勾选的流派、标签、工作室和评分需通过“补充其他元数据”从 JAVDB 获取；关闭时直接使用来源站点提供的这些数据。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
