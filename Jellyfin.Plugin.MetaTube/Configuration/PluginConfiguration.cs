@@ -490,8 +490,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("只从JAVDB获取其它元数据")]
-    [Description("开启后仅使用来源站点的基础元数据，下方勾选的流派、标签、工作室和评分需通过“补充其他元数据”从 JAVDB 获取；关闭时直接使用来源站点提供的这些数据。")]
+    [DisplayName("只从JAVDB获取其它元数据(建议保持关闭)")]
+    [Description("未勾选时从来源站点获取全部可用元数据；勾选后不再从来源站点获取“其它元数据”，只会从JAVDB获取。JAVDB中的流派、标签等信息更规整。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
@@ -554,8 +554,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public string JavDbApiUrl { get; set; } = "https://jdforrepam.com/api";
 
 #if __EMBY__
-    [DisplayName("JAVDB Authorization")]
-    [Description("填写 JAVDB 主站的 Authorization。")]
+    [DisplayName("JAVDB 凭证")]
+    [Description("仅支持 Authorization:eyxxxx 或 Cookie:xxxx，粘贴到同一行，自动识别。")]
 #endif
     public string JavDbAuthorization { get; set; } = string.Empty;
 

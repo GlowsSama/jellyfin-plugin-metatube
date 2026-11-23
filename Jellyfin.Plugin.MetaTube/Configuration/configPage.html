@@ -442,9 +442,9 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
-                            <span>只从JAVDB获取其它元数据</span>
+                            <span>只从JAVDB获取其它元数据(建议保持关闭)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">其它元数据在下方勾选。关闭时保留来源站点的全部可用元数据；开启时跳过已勾选字段，需运行“补充其他元数据”从 JAVDB 补全。</div>
+                        <div class="fieldDescription checkboxFieldDescription">未勾选时从来源站点获取全部可用元数据；勾选后不再从来源站点获取“其它元数据”，只会从JAVDB获取。JAVDB中的流派、标签等信息更规整。</div>
                     </div>
 
                     <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
@@ -469,9 +469,9 @@
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbAuthorization">JAVDB Authorization：</label>
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbAuthorization">JAVDB 凭证：</label>
                         <input id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" type="text" spellcheck="false" autocomplete="off"/>
-                        <div class="fieldDescription">填写 JAVDB 主站的 Authorization。</div>
+                        <div class="fieldDescription">仅支持 Authorization:eyxxxx 或 Cookie:xxxx，粘贴到同一行，自动识别。</div>
                     </div>
 
                     <div class="inputContainer">

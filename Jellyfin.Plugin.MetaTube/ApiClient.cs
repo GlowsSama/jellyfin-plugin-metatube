@@ -342,8 +342,8 @@ public static class ApiClient
     {
         var server = Plugin.Instance.Configuration.Server;
         var token = Plugin.Instance.Configuration.Token;
-        var authorization = GetJavDbAuthorization();
-        var signature = GetJavDbSessionSignature(authorization);
+        var credentials = GetJavDbCredentials();
+        var signature = GetJavDbSessionSignature(credentials.Cookie, credentials.Authorization);
 
         if (IsJavDbSessionSyncCurrent(server, token, signature))
             return;
@@ -353,13 +353,13 @@ public static class ApiClient
         {
             server = Plugin.Instance.Configuration.Server;
             token = Plugin.Instance.Configuration.Token;
-            authorization = GetJavDbAuthorization();
-            signature = GetJavDbSessionSignature(authorization);
+            credentials = GetJavDbCredentials();
+            signature = GetJavDbSessionSignature(credentials.Cookie, credentials.Authorization);
 
             if (IsJavDbSessionSyncCurrent(server, token, signature))
                 return;
 
-            var hasCredentials = authorization.Length > 0;
+            var hasCredentials = credentials.Cookie.Length > 0 || credentials.Authorization.Length > 0;
             if (!IsJavDbSessionSyncInitialized && !hasCredentials)
             {
                 MarkJavDbSessionSyncComplete(server, token, signature, DateTimeOffset.MaxValue);
@@ -374,8 +374,8 @@ public static class ApiClient
                 {
                     Username = string.Empty,
                     Password = string.Empty,
-                    Cookie = string.Empty,
-                    Authorization = authorization,
+                    Cookie = credentials.Cookie,
+                    Authorization = credentials.Authorization,
                     ApiUrl = DefaultJavDbApiUrl
                 });
 
@@ -492,14 +492,27 @@ public static class ApiClient
         }
     }
 
-    private static string GetJavDbAuthorization()
+    private static (string Cookie, string Authorization) GetJavDbCredentials()
     {
-        return Plugin.Instance.Configuration.JavDbAuthorization?.Trim() ?? string.Empty;
+        var value = Plugin.Instance.Configuration.JavDbAuthorization?.Trim() ?? string.Empty;
+        if (value.Length == 0)
+            return (string.Empty, string.Empty);
+
+        const string CookiePrefix = "Cookie:";
+        if (value.StartsWith(CookiePrefix, StringComparison.OrdinalIgnoreCase))
+            return (value[CookiePrefix.Length..].Trim(), string.Empty);
+
+        const string AuthorizationPrefix = "Authorization:";
+        if (value.StartsWith(AuthorizationPrefix, StringComparison.OrdinalIgnoreCase))
+            return (string.Empty, value[AuthorizationPrefix.Length..].Trim());
+
+        return (string.Empty, string.Empty);
     }
 
-    private static string GetJavDbSessionSignature(string authorization)
+    private static string GetJavDbSessionSignature(string cookie, string authorization)
     {
-        var material = string.Join("\n", DefaultJavDbPrimaryDomain, DefaultJavDbApiUrl, authorization);
+        var material = string.Join("\n", DefaultJavDbPrimaryDomain, DefaultJavDbApiUrl, cookie,
+            authorization);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
     }
 
