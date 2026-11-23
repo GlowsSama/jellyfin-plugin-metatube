@@ -57,12 +57,13 @@ public class PluginConfiguration : BasePluginConfiguration
 #if __EMBY__
     [DisplayName("刮削预告片")]
     [Description("生成 strm 格式的在线视频预告片。")]
+    [Browsable(false)]
 #endif
     public bool EnableTrailers { get; set; } = false;
 
 #if __EMBY__
     [DisplayName("仅获取基础元数据 (建议关闭)")]
-    [Description("开启时能获取包括番号、标题、演员和发行时间等基础元数据，同时会获取流派、标签、工作室、评分或导演等其他数据。\n\n关闭后仅获取包括番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据，如需其他元数据可从计划任务-补充其他元数据获取。\n\n从JAVDB获取的其他数据格式更统一更规整。")]
+    [Description("开启时仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。\n\n关闭后会同时获取来源站点的流派、标签、工作室、评分或导演等其他数据，如需统一格式可运行计划任务-补充其他元数据。\n\n从JAVDB获取的其他数据格式更统一更规整。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
@@ -152,6 +153,7 @@ public class PluginConfiguration : BasePluginConfiguration
             nameof(JavDbMetadataSyncMode.Full) => "全量替换",
             nameof(JavDbMetadataSyncMode.Incremental) => "增量补全",
             nameof(JavDbMetadataSyncMode.Skipped) => "未选择替换项目",
+            "EventQueue" => "事件队列",
             _ => "尚未运行"
         };
     }
@@ -495,8 +497,9 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("补充其他元数据")]
-    [Description("对应计划任务“补充其他元数据”，只替换以上勾选的项目，未勾选的项目保持不变。")]
+    [DisplayName("其它元数据")]
+    [Description(
+        "新入库影片会由事件队列自动补充以上勾选的项目，未勾选的项目保持不变。计划任务“补充其他元数据”会先补充 JAVDB 数据，再统一整理流派、封面角标和排序。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif
@@ -544,41 +547,53 @@ public class PluginConfiguration : BasePluginConfiguration
 #endif
 
 #if __EMBY__
-    [DisplayName("JAVDB 主站域名")]
+    [DisplayName("启用 JAVDB 新入库事件补全")]
     [Description(
-        "留空使用 JAVDB 官方主站。普通请求只轮询备用站；只有备用站明确要求登录时才使用主站兜底。账号和 Cookie 只同步到网页主站。")]
+        "新入库影片稳定后自动进入持久化队列并补充所选元数据。JAVDB 请求串行执行，前后至少间隔 10 秒；此限速仅适用于 JAVDB，其他刮削源不受影响。")]
 #endif
-    public string JavDbPrimaryDomain { get; set; } = string.Empty;
+    public bool EnableJavDbMetadataEventQueue { get; set; } = true;
+
+#if __EMBY__
+    [DisplayName("启用 JAVDB 夜间兜底扫描")]
+    [Description(
+        "每天 03:30 扫描遗漏或失败的影片，最多入队 500 部。JAVDB 请求串行执行，前后至少间隔 10 秒；此限速仅适用于 JAVDB，其他刮削源不受影响。")]
+#endif
+    public bool EnableJavDbMetadataNightlyScan { get; set; } = true;
+
+#if __EMBY__
+    [DisplayName("JAVDB 主站域名")]
+    [Browsable(false)]
+#endif
+    public string JavDbPrimaryDomain { get; set; } = "https://javdb.com/";
 
 #if __EMBY__
     [DisplayName("JAVDB 账号")]
-    [Description("JAVDB 网页主站登录账号。若站点要求图片验证码，账号密码可能无法自动登录；此时请改用 Cookie。")]
+    [Description("JAVDB 网页主站登录账号。账号密码、Cookie、API Token 可同时填写，但只会启用一种；优先级为 API Token > Cookie > 账号密码。")]
 #endif
     public string JavDbUsername { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB 密码")]
-    [Description("JAVDB 登录密码。凭据会通过当前 MetaTube 插件 HTTP 配置同步到服务端。")]
+    [Description("JAVDB 登录密码，需要和账号同时填写。若填写 Cookie 或 API Token，则账号密码不会发送到服务端。")]
 #endif
     public string JavDbPassword { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB Cookie")]
-    [Description("优先于网页账号密码。可从已登录浏览器复制完整 Cookie 请求头；仅在网页主站登录兜底时使用。")]
+    [Description("可从已登录浏览器复制完整 Cookie 请求头。填写 Cookie 后会忽略账号密码；若同时填写 API Token，则优先使用 API Token。")]
 #endif
     public string JavDbCookie { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB API地址")]
-    [Description(
-        "JAVDB API 地址，默认 https://jdforrepam.com/api。普通网页请求和备用域名不会使用此地址。")]
+    [Browsable(false)]
 #endif
     public string JavDbApiUrl { get; set; } = "https://jdforrepam.com/api";
 
 #if __EMBY__
     [DisplayName("JAVDB API Token")]
     [Description(
-        "可填写 Authorization、Bearer Token 或原始 Token。备用站明确要求登录时优先调用 JAVDB API；API 失败后才使用网页主站 Cookie 或账号密码。Token 不会发送到网页主站或备用域名。")]
+        "可填写 Authorization、Bearer Token 或原始 Token。填写后优先使用 API Token，并忽略 Cookie 和账号密码；Token 不会发送到网页主站或备用域名。")]
 #endif
     public string JavDbAuthorization { get; set; } = string.Empty;
 
@@ -628,7 +643,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 上次模式")]
-    [Description("只读统计。显示上一次任务执行的是全量替换还是增量补全。")]
+    [Description("只读统计。显示上一次任务执行的是全量替换、增量补全还是事件队列。")]
     [ReadOnly(true)]
 #endif
     public string JavDbMetadataLastMode => FormatJavDbMetadataLastMode(GetJavDbMetadataSummary().LastRunMode);

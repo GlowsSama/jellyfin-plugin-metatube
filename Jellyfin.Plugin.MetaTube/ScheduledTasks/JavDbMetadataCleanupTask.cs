@@ -65,10 +65,17 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
     }
 
 #if __EMBY__
-    public async Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
+    public Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
 #else
-    public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
 #endif
+    {
+        return JavDbMetadataTaskBase.RunWorkflowExclusiveAsync(
+            () => ExecuteCoreAsync(cancellationToken, progress),
+            cancellationToken);
+    }
+
+    private async Task ExecuteCoreAsync(CancellationToken cancellationToken, IProgress<double> progress)
     {
         await Task.Yield();
 
@@ -169,6 +176,7 @@ public sealed class JavDbMetadataCleanupTask : IScheduledTask
         var original = CaptureSnapshot(item);
         try
         {
+            JavDbMetadataEventSuppressor.Suppress(item.Id, TimeSpan.FromSeconds(45));
             item.Genres = CloneValues(snapshot.Genres);
             item.Tags = CloneValues(snapshot.Tags);
             item.Studios = CloneValues(snapshot.Studios);

@@ -37,6 +37,11 @@
         <PackageReference Include="System.Memory" Version="4.5.5"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- Keep the source for future restoration, but do not register the task. -->
+        <Compile Remove="ScheduledTasks/GenerateTrailersTask.cs"/>
+    </ItemGroup>
+
     <ItemGroup Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='Release'">
         <PackageReference Include="Jellyfin.Controller" Version="10.11.0"/>
         <PackageReference Include="Jellyfin.Model" Version="10.11.0"/>

@@ -29,7 +29,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     private const string JavDbProvider = "JavDB";
     private const int StateSaveBatchSize = 25;
     private const int MaxJavDbKeywordCandidates = 8;
-    private static readonly TimeSpan JavDbTaskInterval = TimeSpan.FromSeconds(10);
+    private static readonly SemaphoreSlim WorkflowGate = new(1, 1);
     private static readonly Regex Fc2NumberPattern = new(
         @"(?i)(?<![A-Z0-9])FC2(?:[-_\s]?PPV)?[-_\s]?(?<number>\d{5,})(?!\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -91,10 +91,32 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
     public abstract IEnumerable<TaskTriggerInfo> GetDefaultTriggers();
 
 #if __EMBY__
-    public async Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
+    public Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
 #else
-    public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
 #endif
+    {
+        return RunWorkflowExclusiveAsync(
+            () => ExecuteCoreAsync(cancellationToken, progress),
+            cancellationToken);
+    }
+
+    internal static async Task RunWorkflowExclusiveAsync(
+        Func<Task> action,
+        CancellationToken cancellationToken)
+    {
+        await WorkflowGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await action().ConfigureAwait(false);
+        }
+        finally
+        {
+            WorkflowGate.Release();
+        }
+    }
+
+    private async Task ExecuteCoreAsync(CancellationToken cancellationToken, IProgress<double> progress)
     {
         await Task.Yield();
 
@@ -111,9 +133,14 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
 
         var configuration = Plugin.Instance.Configuration;
         var selection = JavDbReplacementSelection.FromConfiguration(configuration);
+        var libraryScope = JavDbLibraryScope.Filter(
+            _libraryManager, allItems, configuration.GetLibraryProviderFilters());
         var state = await LoadStateAsync(cancellationToken).ConfigureAwait(false);
         if (!selection.HasAny)
         {
+            await MetadataOrganizer.OrganizeAsync(
+                    libraryScope.Items, _libraryManager, _logger, cancellationToken, progress)
+                .ConfigureAwait(false);
             state.LastRunAtUtc = DateTimeOffset.UtcNow;
             state.LastRunMode = nameof(JavDbMetadataSyncMode.Skipped);
             state.ReplacementFields = selection.Signature;
@@ -138,8 +165,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             state.ReplacementFields = selection.Signature;
         }
 
-        var libraryScope = JavDbLibraryScope.Filter(
-            _libraryManager, allItems, configuration.GetLibraryProviderFilters());
         var plan = JavDbMetadataSyncPlanner.Create(
             libraryScope.Items, state, GetJavDbKeyword, selection.Genres);
         var clearedCompletedFailures = RemoveCompletedGenreFailures(state, plan.GenreCompletedItems);
@@ -164,27 +189,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         var pendingStateWrites = 0;
         state.LastRunAtUtc = DateTimeOffset.UtcNow;
         state.LastRunMode = plan.Mode.ToString();
-        DateTimeOffset? lastJavDbRequestCompletedAt = null;
-
-        async Task<T> SendJavDbRequestAsync<T>(Func<Task<T>> request)
-        {
-            if (lastJavDbRequestCompletedAt.HasValue)
-            {
-                var elapsed = DateTimeOffset.UtcNow - lastJavDbRequestCompletedAt.Value;
-                var remaining = JavDbTaskInterval - elapsed;
-                if (remaining > TimeSpan.Zero)
-                    await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                return await request().ConfigureAwait(false);
-            }
-            finally
-            {
-                lastJavDbRequestCompletedAt = DateTimeOffset.UtcNow;
-            }
-        }
 
         try
         {
@@ -192,211 +196,16 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var item = itemList[index];
-                progress?.Report(itemList.Count == 0 ? 100 : (double)index / itemList.Count * 100);
-
-                var keywords = GetJavDbKeywords(item);
-                if (keywords.Count == 0)
-                {
-                    _logger.Debug("JAVDB 元数据跳过 | 项目ID={0} | 标题={1} | 原因=无法识别番号",
-                        item.Id.ToString("N"), item.Name);
-                    continue;
-                }
-
-                var failureAlias = FindFailureAlias(state, item, keywords);
-                var sourceKeyword = failureAlias == null
-                    ? keywords[0]
-                    : GetFailureSourceKeyword(failureAlias);
-                if (failureAlias != null &&
-                    !string.IsNullOrWhiteSpace(failureAlias.Keyword))
-                {
-                    var mappedKeyword = failureAlias.Keyword.Trim();
-                    keywords.RemoveAll(candidate =>
-                        string.Equals(candidate, mappedKeyword, StringComparison.OrdinalIgnoreCase));
-                    keywords.Insert(0, mappedKeyword);
-                }
-
-                var keyword = keywords[0];
-                var original = CaptureSnapshot(item, selection.HasPeople);
-                var metadataCleared = false;
-                try
-                {
-                    var cleared = new JavDbMetadataSnapshot
-                    {
-                        Genres = selection.Genres ? Array.Empty<string>() : original.Genres,
-                        Tags = selection.Tags ? Array.Empty<string>() : original.Tags,
-                        Studios = selection.Studios ? Array.Empty<string>() : original.Studios,
-                        CommunityRating = selection.Rating ? null : original.CommunityRating,
-                        PremiereDate = selection.ReleaseDate ? null : original.PremiereDate,
-                        ProductionYear = selection.ReleaseDate ? null : original.ProductionYear,
-                        People = selection.HasPeople ? RemoveSelectedPeople(original.People, selection) : null
-                    };
-                    metadataCleared = true;
-                    await ApplyMetadataAsync(item, cleared, selection, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    _logger.Info(
-                        "JAVDB 番号候选 | 项目ID={0} | 标题={1} | 候选={2}",
-                        item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
-
-                    MovieInfo info = null;
-                    var matchedKeyword = keyword;
-                    foreach (var candidate in keywords)
-                    {
-                        _logger.Info("JAVDB 候选请求 | 项目ID={0} | 番号={1}",
-                            item.Id.ToString("N"), candidate);
-                        try
-                        {
-                            info = await SendJavDbRequestAsync(() =>
-                                    ApiClient.GetMovieInfoAsync(JavDbProvider, candidate, false, cancellationToken))
-                                .ConfigureAwait(false);
-                            matchedKeyword = candidate;
-                            _logger.Info("JAVDB 候选命中 | 项目ID={0} | 番号={1} | 结果ID={2}",
-                                item.Id.ToString("N"), candidate, info.Id);
-                            break;
-                        }
-                        catch (ApiRequestException exception) when (exception.IsNotFound)
-                        {
-                            _logger.Info("JAVDB 候选未找到 | 项目ID={0} | 番号={1} | 继续下一候选",
-                                item.Id.ToString("N"), candidate);
-                        }
-                    }
-
-                    if (info == null)
-                    {
-                        var title = GetJavDbTitle(item);
-                        if (!string.IsNullOrWhiteSpace(title))
-                        {
-                            _logger.Info("JAVDB 标题兜底开始 | 项目ID={0} | 标题={1}",
-                                item.Id.ToString("N"), title);
-                            List<MovieSearchResult> titleResults;
-                            try
-                            {
-                                titleResults = await SendJavDbRequestAsync(() =>
-                                        ApiClient.SearchMovieAsync(title, JavDbProvider, false, cancellationToken))
-                                    .ConfigureAwait(false);
-                            }
-                            catch (ApiRequestException exception) when (exception.IsNotFound)
-                            {
-                                titleResults = new List<MovieSearchResult>();
-                            }
-
-                            var titleMatch = SelectConfidentTitleMatch(title, titleResults);
-                            if (titleMatch != null)
-                            {
-                                var titleMatchId = !string.IsNullOrWhiteSpace(titleMatch.Id)
-                                    ? titleMatch.Id
-                                    : titleMatch.Number;
-                                _logger.Info(
-                                    "JAVDB 标题兜底命中 | 项目ID={0} | 标题={1} | 结果ID={2} | 番号={3}",
-                                    item.Id.ToString("N"), title, titleMatchId, titleMatch.Number);
-                                try
-                                {
-                                    info = await SendJavDbRequestAsync(() =>
-                                            ApiClient.GetMovieInfoAsync(JavDbProvider, titleMatchId, false,
-                                                cancellationToken))
-                                        .ConfigureAwait(false);
-                                    matchedKeyword = string.IsNullOrWhiteSpace(titleMatch.Number)
-                                        ? titleMatchId
-                                        : titleMatch.Number;
-                                }
-                                catch (ApiRequestException exception) when (exception.IsNotFound)
-                                {
-                                    _logger.Info("JAVDB 标题兜底结果已失效 | 项目ID={0} | 结果ID={1}",
-                                        item.Id.ToString("N"), titleMatchId);
-                                }
-                            }
-                            else
-                            {
-                                _logger.Info(
-                                    "JAVDB 标题兜底未采用 | 项目ID={0} | 标题={1} | 原因=无唯一高置信度结果 | 结果数={2}",
-                                    item.Id.ToString("N"), title, titleResults.Count);
-                            }
-                        }
-                    }
-
-                    if (info == null)
-                    {
-                        await TryRestoreMetadataAsync(item, original, selection).ConfigureAwait(false);
-                        metadataCleared = false;
-                        failed++;
-                        var failureMessage =
-                            $"not_found: JAVDB 未找到候选 [{string.Join(", ", keywords)}]";
-                        _logger.Warn(
-                            "JAVDB 元数据未找到 | 项目ID={0} | 标题={1} | 候选={2} | 已恢复原元数据",
-                            item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
-                        RecordOutcome(state, item, sourceKeyword, keyword, false, "not_found",
-                            failureMessage);
-                        pendingStateWrites++;
-                    }
-                    else
-                    {
-                        keyword = matchedKeyword;
-                        var desired = new JavDbMetadataSnapshot
-                        {
-                            Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
-                            Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
-                            Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
-                            CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
-                            PremiereDate = selection.ReleaseDate
-                                ? GetPremiereDate(info.ReleaseDate)
-                                : original.PremiereDate,
-                            ProductionYear = selection.ReleaseDate
-                                ? info.ReleaseDate.GetValidYear()
-                                : original.ProductionYear,
-                            People = selection.HasPeople
-                                ? BuildPeopleWithJavDbSelections(original.People, info.Actors, info.Director,
-                                    selection)
-                                : null
-                        };
-                        var current = CaptureSnapshot(item, selection.HasPeople);
-                        var needsApply = HasChanges(current, desired, selection);
-                        var itemUpdated = HasChanges(original, desired, selection);
-
-                        if (needsApply)
-                        {
-                            await ApplyMetadataAsync(item, desired, selection, cancellationToken)
-                                .ConfigureAwait(false);
-                        }
-
-                        if (itemUpdated)
-                            updated++;
-
-                        RecordOutcome(state, item, sourceKeyword, keyword, true, string.Empty,
-                            string.Empty);
-                        _logger.Info(
-                            "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 替换项目={3} | 已更新={4}",
-                            keyword, item.Id.ToString("N"), item.Name, selection.Signature,
-                            itemUpdated ? "是" : "否");
-                        pendingStateWrites++;
-                    }
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    if (metadataCleared)
-                    {
-                        await TryRestoreMetadataAsync(item, original, selection)
-                            .ConfigureAwait(false);
-                    }
-
-                    throw;
-                }
-                catch (Exception exception)
-                {
-                    if (metadataCleared)
-                    {
-                        await TryRestoreMetadataAsync(item, original, selection)
-                            .ConfigureAwait(false);
-                    }
-
+                progress?.Report(itemList.Count == 0 ? 85 : (double)index / itemList.Count * 85);
+                var outcome = await ProcessSingleItemAsync(item, state, selection, cancellationToken)
+                    .ConfigureAwait(false);
+                if (outcome.Kind == JavDbMetadataItemOutcomeKind.Updated)
+                    updated++;
+                if (outcome.Kind is JavDbMetadataItemOutcomeKind.Failed
+                    or JavDbMetadataItemOutcomeKind.NotFound)
                     failed++;
-                    var failureKind = ClassifyJavDbFailure(exception);
-                    _logger.Error(
-                        "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 类型={3} | 错误={4}",
-                        keyword, item.Id.ToString("N"), item.Name, failureKind, exception.Message);
-                    RecordOutcome(state, item, sourceKeyword, keyword, false, failureKind,
-                        $"{failureKind}: {exception.Message}");
+                if (outcome.Kind != JavDbMetadataItemOutcomeKind.Skipped)
                     pendingStateWrites++;
-                }
 
                 if (pendingStateWrites >= StateSaveBatchSize)
                 {
@@ -410,11 +219,211 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             await TrySaveStateAsync(state, CancellationToken.None).ConfigureAwait(false);
         }
 
+        var organized = await MetadataOrganizer.OrganizeAsync(
+                libraryScope.Items, _libraryManager, _logger, cancellationToken, progress, 85, 100)
+            .ConfigureAwait(false);
         _logger.Info(
-            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 媒体库范围跳过={3} | 无番号跳过={4} | 记录跳过={5} | 流派非空跳过={6} | 状态文件={7}",
-            plan.ModeLabel, updated, failed, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
+            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 整理元数据={3} | 媒体库范围跳过={4} | 无番号跳过={5} | 记录跳过={6} | 流派非空跳过={7} | 状态文件={8}",
+            plan.ModeLabel, updated, failed, organized, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
             plan.SkippedByStateCount, plan.SkippedByGenreCount, _stateFilePath);
         progress?.Report(100);
+    }
+
+    internal async Task<JavDbMetadataItemOutcome> ProcessSingleItemAsync(
+        BaseItem item,
+        JavDbMetadataState state,
+        JavDbReplacementSelection selection,
+        CancellationToken cancellationToken)
+    {
+        if (item == null || state == null || selection?.HasAny != true)
+            return JavDbMetadataItemOutcome.Skipped();
+
+        var keywords = GetJavDbKeywords(item);
+        if (keywords.Count == 0)
+        {
+            _logger.Debug("JAVDB 元数据跳过 | 项目ID={0} | 标题={1} | 原因=无法识别番号",
+                item.Id.ToString("N"), item.Name);
+            return JavDbMetadataItemOutcome.Skipped();
+        }
+
+        var failureAlias = FindFailureAlias(state, item, keywords);
+        var sourceKeyword = failureAlias == null
+            ? keywords[0]
+            : GetFailureSourceKeyword(failureAlias);
+        if (failureAlias != null &&
+            !string.IsNullOrWhiteSpace(failureAlias.Keyword))
+        {
+            var mappedKeyword = failureAlias.Keyword.Trim();
+            keywords.RemoveAll(candidate =>
+                string.Equals(candidate, mappedKeyword, StringComparison.OrdinalIgnoreCase));
+            keywords.Insert(0, mappedKeyword);
+        }
+
+        var keyword = keywords[0];
+        var original = CaptureSnapshot(item, selection.HasPeople);
+        var metadataCleared = false;
+        try
+        {
+            var cleared = new JavDbMetadataSnapshot
+            {
+                Genres = selection.Genres ? Array.Empty<string>() : original.Genres,
+                Tags = selection.Tags ? Array.Empty<string>() : original.Tags,
+                Studios = selection.Studios ? Array.Empty<string>() : original.Studios,
+                CommunityRating = selection.Rating ? null : original.CommunityRating,
+                PremiereDate = selection.ReleaseDate ? null : original.PremiereDate,
+                ProductionYear = selection.ReleaseDate ? null : original.ProductionYear,
+                People = selection.HasPeople ? RemoveSelectedPeople(original.People, selection) : null
+            };
+            metadataCleared = true;
+            await ApplyMetadataAsync(item, cleared, selection, cancellationToken).ConfigureAwait(false);
+
+            _logger.Info(
+                "JAVDB 番号候选 | 项目ID={0} | 标题={1} | 候选={2}",
+                item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
+
+            MovieInfo info = null;
+            var matchedKeyword = keyword;
+            foreach (var candidate in keywords)
+            {
+                _logger.Info("JAVDB 候选请求 | 项目ID={0} | 番号={1}",
+                    item.Id.ToString("N"), candidate);
+                try
+                {
+                    info = await JavDbRequestScheduler.RunAsync(
+                            () => ApiClient.GetMovieInfoAsync(JavDbProvider, candidate, false, cancellationToken),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    matchedKeyword = candidate;
+                    _logger.Info("JAVDB 候选命中 | 项目ID={0} | 番号={1} | 结果ID={2}",
+                        item.Id.ToString("N"), candidate, info.Id);
+                    break;
+                }
+                catch (ApiRequestException exception) when (exception.IsNotFound)
+                {
+                    _logger.Info("JAVDB 候选未找到 | 项目ID={0} | 番号={1} | 继续下一候选",
+                        item.Id.ToString("N"), candidate);
+                }
+            }
+
+            if (info == null)
+            {
+                var title = GetJavDbTitle(item);
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    _logger.Info("JAVDB 标题兜底开始 | 项目ID={0} | 标题={1}",
+                        item.Id.ToString("N"), title);
+                    List<MovieSearchResult> titleResults;
+                    try
+                    {
+                        titleResults = await JavDbRequestScheduler.RunAsync(
+                                () => ApiClient.SearchMovieAsync(title, JavDbProvider, false, cancellationToken),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (ApiRequestException exception) when (exception.IsNotFound)
+                    {
+                        titleResults = new List<MovieSearchResult>();
+                    }
+
+                    var titleMatch = SelectConfidentTitleMatch(title, titleResults);
+                    if (titleMatch != null)
+                    {
+                        var titleMatchId = !string.IsNullOrWhiteSpace(titleMatch.Id)
+                            ? titleMatch.Id
+                            : titleMatch.Number;
+                        _logger.Info(
+                            "JAVDB 标题兜底命中 | 项目ID={0} | 标题={1} | 结果ID={2} | 番号={3}",
+                            item.Id.ToString("N"), title, titleMatchId, titleMatch.Number);
+                        try
+                        {
+                            info = await JavDbRequestScheduler.RunAsync(
+                                    () => ApiClient.GetMovieInfoAsync(JavDbProvider, titleMatchId, false,
+                                        cancellationToken),
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                            matchedKeyword = string.IsNullOrWhiteSpace(titleMatch.Number)
+                                ? titleMatchId
+                                : titleMatch.Number;
+                        }
+                        catch (ApiRequestException exception) when (exception.IsNotFound)
+                        {
+                            _logger.Info("JAVDB 标题兜底结果已失效 | 项目ID={0} | 结果ID={1}",
+                                item.Id.ToString("N"), titleMatchId);
+                        }
+                    }
+                    else
+                    {
+                        _logger.Info(
+                            "JAVDB 标题兜底未采用 | 项目ID={0} | 标题={1} | 原因=无唯一高置信度结果 | 结果数={2}",
+                            item.Id.ToString("N"), title, titleResults.Count);
+                    }
+                }
+            }
+
+            if (info == null)
+            {
+                await TryRestoreMetadataAsync(item, original, selection).ConfigureAwait(false);
+                metadataCleared = false;
+                var failureMessage = $"not_found: JAVDB 未找到候选 [{string.Join(", ", keywords)}]";
+                _logger.Warn(
+                    "JAVDB 元数据未找到 | 项目ID={0} | 标题={1} | 候选={2} | 已恢复原元数据",
+                    item.Id.ToString("N"), item.Name, string.Join(" | ", keywords));
+                RecordOutcome(state, item, sourceKeyword, keyword, false, "not_found", failureMessage);
+                return JavDbMetadataItemOutcome.NotFound(keyword, failureMessage);
+            }
+
+            keyword = matchedKeyword;
+            var desired = new JavDbMetadataSnapshot
+            {
+                Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
+                Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
+                Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
+                CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
+                PremiereDate = selection.ReleaseDate
+                    ? GetPremiereDate(info.ReleaseDate)
+                    : original.PremiereDate,
+                ProductionYear = selection.ReleaseDate
+                    ? info.ReleaseDate.GetValidYear()
+                    : original.ProductionYear,
+                People = selection.HasPeople
+                    ? BuildPeopleWithJavDbSelections(original.People, info.Actors, info.Director, selection)
+                    : null
+            };
+            var current = CaptureSnapshot(item, selection.HasPeople);
+            var needsApply = HasChanges(current, desired, selection);
+            var itemUpdated = HasChanges(original, desired, selection);
+
+            if (needsApply)
+                await ApplyMetadataAsync(item, desired, selection, cancellationToken).ConfigureAwait(false);
+
+            RecordOutcome(state, item, sourceKeyword, keyword, true, string.Empty, string.Empty);
+            _logger.Info(
+                "JAVDB 元数据成功 | 番号={0} | 项目ID={1} | 标题={2} | 替换项目={3} | 已更新={4}",
+                keyword, item.Id.ToString("N"), item.Name, selection.Signature,
+                itemUpdated ? "是" : "否");
+            return itemUpdated
+                ? JavDbMetadataItemOutcome.Updated(keyword)
+                : JavDbMetadataItemOutcome.Unchanged(keyword);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (metadataCleared)
+                await TryRestoreMetadataAsync(item, original, selection).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            if (metadataCleared)
+                await TryRestoreMetadataAsync(item, original, selection).ConfigureAwait(false);
+
+            var failureKind = ClassifyJavDbFailure(exception);
+            var failureMessage = $"{failureKind}: {exception.Message}";
+            _logger.Error(
+                "JAVDB 元数据失败 | 番号={0} | 项目ID={1} | 标题={2} | 类型={3} | 错误={4}",
+                keyword, item.Id.ToString("N"), item.Name, failureKind, exception.Message);
+            RecordOutcome(state, item, sourceKeyword, keyword, false, failureKind, failureMessage);
+            return JavDbMetadataItemOutcome.Failed(keyword, failureKind, failureMessage);
+        }
     }
 
     private async Task<bool> TrySaveStateAsync(JavDbMetadataState state, CancellationToken cancellationToken)
@@ -430,6 +439,18 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             _logger.Error("Write JAVDB metadata task state failed: {0}", exception.Message);
             return false;
         }
+    }
+
+    internal Task<JavDbMetadataState> LoadStateForEventAsync(CancellationToken cancellationToken)
+    {
+        return LoadStateAsync(cancellationToken);
+    }
+
+    internal Task<bool> SaveStateForEventAsync(
+        JavDbMetadataState state,
+        CancellationToken cancellationToken)
+    {
+        return TrySaveStateAsync(state, cancellationToken);
     }
 
     private static int RemoveCompletedGenreFailures(
@@ -960,6 +981,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         var original = CaptureSnapshot(item, selection.HasPeople);
         try
         {
+            JavDbMetadataEventSuppressor.Suppress(item.Id, TimeSpan.FromSeconds(45));
             if (selection.Genres)
                 item.Genres = CloneValues(target.Genres);
             if (selection.Tags)
@@ -1247,21 +1269,14 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "运行时会删除旧数据替换新数据。没有处理记录或替换项目发生变化时执行全量；之后执行增量时，会检查媒体库或 NFO 已载入的“流派”字段：流派非空视为已补充并跳过，流派为空或属于失败记录时才请求 JAVDB。主站拒绝请求时自动切换备用站点。失败任务可在插件设置中的失败任务文本框里映射番号，删除对应行则标记为完成。\n\n如需再次全量运行点击下面“删除其它元数据”。";
+        "手动维护任务。新入库和遗漏影片通常由事件队列与每天 03:30 的夜间兜底扫描自动处理；本任务用于手动全量维护或集中修复。任务会先按插件设置从 JAVDB 补充其他元数据，再统一整理“中文字幕”流派、封面角标、流派替换、去重和排序。没有处理记录、替换项目发生变化或替换项目包含流派且流派为空时会进入 JAVDB 处理清单。JAVDB 请求由专属调度器串行执行，前后至少间隔 10 秒；其他刮削源不受影响。失败任务可在插件设置中的失败任务文本框里映射番号，删除对应行则标记为完成。\n\n如需再次全量运行点击下面“删除其它元数据”。";
 #else
-        "Replaces only the other metadata fields selected in the plugin settings. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. Basic metadata is normally supplied by regular providers. A full pass runs when there are no successful records or the selected fields change. Otherwise, when genres are selected, incremental runs treat a non-empty genre list as already completed and process items whose genres are empty, along with previous failures. Selected fields are cleared before JAVDB is requested, while unselected fields remain unchanged. Original values are restored when a request or update fails. Per-item results are written to the server log. Each movie-number task is followed by a 10-second interval. A failed domain is retried twice before rotating to the next backup. If every domain fails, cooldowns escalate through 15, 30, 60 and 120 minutes.";
+        "Manual maintenance task. The task replaces selected metadata from JAVDB, then organizes Chinese subtitle genres, cover badges, genre substitutions, deduplication and sorting. New and missed items are normally processed by the event queue and the nightly fallback scan at 03:30. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. JAVDB requests are serialized with at least 10 seconds between requests; other providers are not affected.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
-        yield return new TaskTriggerInfo
-        {
-#if __EMBY__
-            Type = TaskTriggerInfo.TriggerDaily,
-#else
-            Type = TaskTriggerInfoType.DailyTrigger,
-#endif
-            TimeOfDayTicks = TimeSpan.FromHours(4).Ticks
-        };
+        // Automatic processing is handled by the event queue and nightly fallback scan.
+        yield break;
     }
 }
