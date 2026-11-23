@@ -62,12 +62,6 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableTrailers { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("不获取其它元数据(建议关闭,建议关闭,建议关闭)")]
-    [Description("开启时仅获取番号、标题、演员和发行时间；关闭时同时获取来源站点的其它元数据。如需统一格式，可运行“补充其他元数据”。")]
-#endif
-    public bool EnableBasicMetadataOnly { get; set; } = true;
-
-#if __EMBY__
     [DisplayName("流派(标签)")]
     [Description("使用 JAVDB 的标签替换影片流派。")]
     [Browsable(false)]
@@ -496,6 +490,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
+    [DisplayName("不获取其它元数据(建议关闭,建议关闭,建议关闭)")]
+    [Description("其它元数据在下方勾选。关闭时保留来源站点的全部可用元数据；开启时跳过已勾选字段，需运行“补充其他元数据”从 JAVDB 补全。")]
+#endif
+    public bool EnableBasicMetadataOnly { get; set; } = true;
+
+#if __EMBY__
     [DisplayName("其它元数据")]
     [Description("新入库影片自动补充勾选项；计划任务“补充其他元数据”同时整理流派、角标和排序。")]
     [EditMultilSelect]
@@ -546,7 +546,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("入库时从JAVDB补充其它元数据")]
-    [Description("新入库影片自动补充所选元数据；JAVDB 请求间隔至少 10 秒。")]
+    [Description("新入库影片自动补充所选元数据。")]
 #endif
     public bool EnableJavDbMetadataEventQueue { get; set; } = true;
 
@@ -564,7 +564,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB Authorization")]
-    [Description("JAVDB 主站 Authorization，可填写 Authorization、Bearer Token 或原始 Token。")]
+    [Description("填写 JAVDB 主站的 Authorization。")]
 #endif
     public string JavDbAuthorization { get; set; } = string.Empty;
 

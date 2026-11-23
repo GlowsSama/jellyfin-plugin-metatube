@@ -36,6 +36,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     private static readonly Regex MediaCodePattern = new(
         @"(?<![A-Z0-9])(?<prefix>[A-Z][A-Z0-9]{1,15})[\s_-]*(?<number>\d{2,8})(?![A-Z0-9])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex PersonNameSeparatorPattern = new(
+        @"\s*[,，、;/；|｜]\s*",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private readonly ILibraryManager _libraryManager;
 
 #if __EMBY__
@@ -97,8 +100,17 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         // Distinct and clean blank list
         m.Genres = m.Genres?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
         m.Actors = m.Actors?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
+        m.Director = string.Join(',', SplitPersonNames(m.Director));
         m.PreviewImages = m.PreviewImages?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ??
                           Array.Empty<string>();
+
+        var includeGenres = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbGenres);
+        var includeTags = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbTags);
+        var includeStudios = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbStudios);
+        var includeActors = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbActors);
+        var includeDirectors = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbDirectors);
+        var includeRating = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbRating);
+        var includeReleaseDate = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbReleaseDate);
 
         // Build parameters.
         var parameters = new Dictionary<string, string>
@@ -133,9 +145,12 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 OriginalTitle = originalTitle,
                 Overview = m.Summary,
                 OfficialRating = Rating,
-                PremiereDate = m.ReleaseDate.GetValidDateTime(),
-                ProductionYear = m.ReleaseDate.GetValidYear(),
-                Genres = !Configuration.EnableBasicMetadataOnly && m.Genres?.Any() == true
+                PremiereDate = includeReleaseDate ? m.ReleaseDate.GetValidDateTime() : null,
+                ProductionYear = includeReleaseDate ? m.ReleaseDate.GetValidYear() : null,
+                CommunityRating = includeRating && m.Score > 0
+                    ? (float?)Math.Round(m.Score * 2, 1)
+                    : null,
+                Genres = includeGenres && m.Genres?.Any() == true
                     ? m.Genres
                     : Array.Empty<string>()
             },
@@ -159,13 +174,13 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             Logger.Info("Add Collection for movie {0} [{1}]", pid.ToString(), m.Series);
         }
 
-        if (!Configuration.EnableBasicMetadataOnly)
+        if (includeTags && !string.IsNullOrWhiteSpace(m.Series))
         {
-            // Add tag (series only).
-            if (!string.IsNullOrWhiteSpace(m.Series))
-                result.Item.AddTag(m.Series);
+            result.Item.AddTag(m.Series);
+        }
 
-            // Add studios (maker and label).
+        if (includeStudios)
+        {
             if (!string.IsNullOrWhiteSpace(m.Maker))
                 result.Item.AddStudio(m.Maker);
 
@@ -175,7 +190,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         // Add actors.
-        foreach (var name in m.Actors ?? Enumerable.Empty<string>())
+        foreach (var name in includeActors
+                     ? m.Actors ?? Enumerable.Empty<string>()
+                     : Enumerable.Empty<string>())
         {
             var actor = new PersonInfo
             {
@@ -188,6 +205,21 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             };
             await SetActorImageUrl(actor, cancellationToken);
             result.AddPerson(actor);
+        }
+
+        foreach (var name in includeDirectors
+                     ? SplitPersonNames(m.Director)
+                     : Enumerable.Empty<string>())
+        {
+            result.AddPerson(new PersonInfo
+            {
+                Name = name.Trim(),
+#if __EMBY__
+                Type = PersonType.Director
+#else
+                Type = PersonKind.Director
+#endif
+            });
         }
 
         return result;
@@ -258,8 +290,12 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             {
                 Name = GetRemoteSearchResultName(m),
                 SearchProviderName = Name,
-                PremiereDate = m.ReleaseDate.GetValidDateTime(),
-                ProductionYear = m.ReleaseDate.GetValidYear(),
+                PremiereDate = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbReleaseDate)
+                    ? m.ReleaseDate.GetValidDateTime()
+                    : null,
+                ProductionYear = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbReleaseDate)
+                    ? m.ReleaseDate.GetValidYear()
+                    : null,
                 ImageUrl = ApiClient.GetPrimaryImageApiUrl(m.Provider, m.Id, m.ThumbUrl, 1.0, true)
             };
             // A selected remote result is an exact provider choice. A later
@@ -277,6 +313,21 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                string.IsNullOrWhiteSpace(pid.Provider) ||
                PluginConfiguration.IsJavDbProvider(pid.Provider) ||
                pid.Update != true;
+    }
+
+    private bool ShouldIncludeSourceMetadata(bool javDbReplacementSelected)
+    {
+        return !Configuration.EnableBasicMetadataOnly || !javDbReplacementSelected;
+    }
+
+    private static IEnumerable<string> SplitPersonNames(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? Enumerable.Empty<string>()
+            : PersonNameSeparatorPattern.Split(value)
+                .Select(name => name.Trim())
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     private string GetMovieSearchKeyword(MovieInfo info)
