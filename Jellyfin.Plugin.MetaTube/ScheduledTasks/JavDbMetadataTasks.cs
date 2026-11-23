@@ -1272,7 +1272,7 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 #if __EMBY__
         "按插件设置从 JAVDB 补充其他元数据，并整理流派、角标和排序。无处理记录或设置变化时全量执行，否则增量执行；请求间隔至少 10 秒。";
 #else
-        "Manual maintenance task. The task replaces selected metadata from JAVDB, then organizes Chinese subtitle genres, cover badges, genre substitutions, deduplication and sorting. New and missed items are normally processed by the event queue and the nightly fallback scan at 03:30. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. JAVDB requests are serialized with at least 10 seconds between requests; other providers are not affected.";
+        "Manual maintenance task. The task replaces selected metadata from JAVDB, then organizes Chinese subtitle genres, cover badges, genre substitutions, deduplication and sorting. New items are normally processed by the event queue; missed or failed items can be processed by running this task. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. JAVDB requests are serialized with at least 10 seconds between requests; other providers are not affected.";
 #endif
 
     public override IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

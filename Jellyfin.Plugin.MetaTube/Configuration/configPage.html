@@ -151,39 +151,6 @@
             background-color: rgba(128, 128, 128, 0.12);
         }
 
-        .metaTubeJavDbAuthRow {
-            align-items: stretch;
-            display: grid;
-            gap: 0.65em;
-            grid-template-columns: minmax(10em, 0.24fr) minmax(0, 1fr);
-        }
-
-        .metaTubeJavDbAuthMode {
-            min-width: 0;
-        }
-
-        .metaTubeJavDbAuthFields {
-            display: grid;
-            gap: 0.65em;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            min-width: 0;
-        }
-
-        .metaTubeJavDbAuthInput {
-            box-sizing: border-box;
-            min-width: 0;
-            width: 100%;
-        }
-
-        @media (max-width: 720px) {
-            .metaTubeJavDbAuthRow {
-                grid-template-columns: minmax(0, 1fr);
-            }
-
-            .metaTubeJavDbAuthFields {
-                grid-template-columns: minmax(0, 1fr);
-            }
-        }
     </style>
 </head>
 
@@ -501,32 +468,10 @@
                         <div class="fieldDescription checkboxFieldDescription">新入库影片自动补充所选元数据；JAVDB 请求间隔至少 10 秒。</div>
                     </div>
 
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkEnableJavDbMetadataNightlyScan" is="emby-checkbox" name="chkEnableJavDbMetadataNightlyScan" type="checkbox"/>
-                            <span>启用 JAVDB 夜间兜底扫描</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">每天 03:30 补查遗漏和失败影片，最多 500 部；同样受 10 秒限速。</div>
-                    </div>
-
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="selectJavDbAuthMode">JAVDB 登录：</label>
-                        <div class="metaTubeJavDbAuthRow">
-                            <div class="metaTubeJavDbAuthMode">
-                                <select class="emby-select-withcolor emby-select" id="selectJavDbAuthMode" is="emby-select" name="selectJavDbAuthMode">
-                                    <option value="password">账号密码</option>
-                                    <option value="cookie">Cookie</option>
-                                    <option value="token">API Token</option>
-                                </select>
-                            </div>
-                            <div class="metaTubeJavDbAuthFields" id="javDbPasswordAuthFields">
-                                <input class="metaTubeJavDbAuthInput" id="txtJavDbUsername" is="emby-input" name="txtJavDbUsername" placeholder="账号" type="text" autocomplete="username"/>
-                                <input class="metaTubeJavDbAuthInput" id="txtJavDbPassword" is="emby-input" name="txtJavDbPassword" placeholder="密码" type="password" autocomplete="new-password"/>
-                            </div>
-                            <input class="metaTubeJavDbAuthInput" id="txtJavDbCookie" is="emby-input" name="txtJavDbCookie" placeholder="Cookie" style="display: none;" type="text" spellcheck="false" autocomplete="off"/>
-                            <input class="metaTubeJavDbAuthInput" id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" placeholder="API Token" style="display: none;" type="text" spellcheck="false" autocomplete="off"/>
-                        </div>
-                        <div class="fieldDescription" id="javDbAuthDescription">仅在备用站要求登录时，使用主站账号密码兜底。</div>
+                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbAuthorization">JAVDB Authorization：</label>
+                        <input id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" type="text" spellcheck="false" autocomplete="off"/>
+                        <div class="fieldDescription">仅在备用站要求登录时，使用主站 Authorization 兜底。</div>
                     </div>
 
                     <div class="inputContainer">
@@ -561,7 +506,7 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">事件队列自动处理新入库，03:30 补查遗漏和失败影片。手动维护请运行“补充其他元数据”。JAVDB 请求间隔至少 10 秒，其他刮削源不受影响。</div>
+                    <div class="fieldDescription">事件队列自动处理新入库；遗漏或失败影片可通过计划任务“补充其他元数据”补查。JAVDB 请求间隔至少 10 秒，其他刮削源不受影响。</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbMetadataFailureTasks">JAVDB 失败任务：</label>
@@ -897,32 +842,6 @@
             }
         });
 
-        function updateJavDbAuthFields(mode) {
-            var authMode = mode || "password";
-            var isPassword = authMode === "password";
-            var isCookie = authMode === "cookie";
-            var isToken = authMode === "token";
-            var description;
-
-            $('#javDbPasswordAuthFields').css('display', isPassword ? 'grid' : 'none');
-            $('#txtJavDbCookie').css('display', isCookie ? 'block' : 'none');
-            $('#txtJavDbAuthorization').css('display', isToken ? 'block' : 'none');
-
-            if (isCookie) {
-                description = "仅在备用站要求登录时，使用主站 Cookie 兜底。";
-            } else if (isToken) {
-                description = "仅在备用站要求登录时，使用主站 API Token 兜底。";
-            } else {
-                description = "仅在备用站要求登录时，使用主站账号密码兜底。";
-            }
-
-            $('#javDbAuthDescription').text(description);
-        }
-
-        $('#selectJavDbAuthMode').on('change', function () {
-            updateJavDbAuthFields(this.value);
-        });
-
         $('.MetaTubeConfigurationPage').on('pageshow', function () {
             Dashboard.showLoadingMsg();
             var page = this;
@@ -949,19 +868,8 @@
                 page.querySelector('#chkEnableLibraryProviderFilter').checked = config.EnableLibraryProviderFilter;
                 $('#txtLibraryProviderFilterRules', page).val(config.LibraryProviderFilterRules).change();
                 page.querySelector('#chkEnableJavDbMetadataEventQueue').checked = config.EnableJavDbMetadataEventQueue;
-                page.querySelector('#chkEnableJavDbMetadataNightlyScan').checked = config.EnableJavDbMetadataNightlyScan;
                 $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
-                $('#txtJavDbUsername', page).val(config.JavDbUsername).change();
-                $('#txtJavDbPassword', page).val(config.JavDbPassword).change();
-                $('#txtJavDbCookie', page).val(config.JavDbCookie).change();
                 $('#txtJavDbAuthorization', page).val(config.JavDbAuthorization || '').change();
-                var javDbAuthMode = config.JavDbAuthorization
-                    ? "token"
-                    : config.JavDbCookie
-                        ? "cookie"
-                        : "password";
-                $('#selectJavDbAuthMode', page).val(javDbAuthMode).change();
-                updateJavDbAuthFields(javDbAuthMode);
                 $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
                 $('#txtNameTemplate', page).val(config.NameTemplate).change();
@@ -1020,15 +928,10 @@
                 config.EnableLibraryProviderFilter = $('#chkEnableLibraryProviderFilter', form).prop('checked');
                 config.LibraryProviderFilterRules = $('#txtLibraryProviderFilterRules', form).val();
                 config.EnableJavDbMetadataEventQueue = $('#chkEnableJavDbMetadataEventQueue', form).prop('checked');
-                config.EnableJavDbMetadataNightlyScan = $('#chkEnableJavDbMetadataNightlyScan', form).prop('checked');
                 config.JavDbApiUrl = 'https://jdforrepam.com/api';
                 config.JavDbPrimaryDomain = 'https://javdb.com/';
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
-                var javDbAuthMode = $('#selectJavDbAuthMode', form).val();
-                config.JavDbUsername = javDbAuthMode === "password" ? $('#txtJavDbUsername', form).val() : "";
-                config.JavDbPassword = javDbAuthMode === "password" ? $('#txtJavDbPassword', form).val() : "";
-                config.JavDbCookie = javDbAuthMode === "cookie" ? $('#txtJavDbCookie', form).val() : "";
-                config.JavDbAuthorization = javDbAuthMode === "token" ? $('#txtJavDbAuthorization', form).val() : "";
+                config.JavDbAuthorization = $('#txtJavDbAuthorization', form).val();
                 config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');
                 config.NameTemplate = $('#txtNameTemplate', form).val();

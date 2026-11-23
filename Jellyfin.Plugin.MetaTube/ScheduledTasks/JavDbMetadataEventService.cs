@@ -13,9 +13,7 @@ namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
 {
     private const int MaxQueueRetryAttempts = 3;
-    private const int MaxNightlyFallbackItems = 500;
     private static readonly TimeSpan WorkerPollInterval = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan NightlyScanTime = new(3, 30, 0);
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger _logger;
     private readonly JavDbMetadataCompleteTask _processor;
@@ -23,7 +21,6 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
     private readonly string _queueFilePath;
     private CancellationTokenSource _cancellationTokenSource;
     private Task _workerTask;
-    private DateTime _lastNightlyScanDate = DateTime.MinValue;
     private bool _started;
 
     public JavDbMetadataEventService(
@@ -229,7 +226,6 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
         {
             try
             {
-                await RunNightlyFallbackScanIfDueAsync(cancellationToken).ConfigureAwait(false);
                 await ProcessNextDueQueueItemAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -473,93 +469,6 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
         {
             _queueGate.Release();
         }
-    }
-
-    private async Task RunNightlyFallbackScanIfDueAsync(CancellationToken cancellationToken)
-    {
-        var configuration = Plugin.Instance?.Configuration;
-        if (configuration?.EnableJavDbMetadataNightlyScan != true)
-            return;
-
-        var selection = JavDbReplacementSelection.FromConfiguration(configuration);
-
-        var now = DateTimeOffset.Now;
-        if (now.TimeOfDay < NightlyScanTime || _lastNightlyScanDate == now.Date)
-            return;
-
-        _lastNightlyScanDate = now.Date;
-        var allItems = _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            MediaTypes = new[] { MediaType.Video },
-            Recursive = true,
-            IncludeItemTypes = new[] { nameof(Movie) }
-        }).OfType<Movie>().ToList();
-        var scope = JavDbLibraryScope.Filter(
-            _libraryManager,
-            allItems,
-            configuration.GetLibraryProviderFilters());
-        var state = await _processor.LoadStateForEventAsync(cancellationToken).ConfigureAwait(false);
-        var candidates = scope.Items
-            .OfType<Movie>()
-            .Where(MetadataOrganizer.IsMetaTubeItem)
-            .Select(item => new
-            {
-                Item = item,
-                IsFailure = IsFailureRecord(state, item),
-                IsSuccess = IsSuccessRecord(state, item),
-                HasGenres = HasGenres(item)
-            })
-            .Where(candidate => candidate.IsFailure || !candidate.IsSuccess ||
-                                (selection.Genres && !candidate.HasGenres))
-            .OrderByDescending(candidate => candidate.IsFailure)
-            .ThenBy(candidate => candidate.HasGenres)
-            .Take(MaxNightlyFallbackItems)
-            .ToList();
-        if (candidates.Count == 0)
-            return;
-
-        await _queueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var queue = await JavDbMetadataEventQueueStore.LoadAsync(_queueFilePath, cancellationToken)
-                .ConfigureAwait(false);
-            var nowUtc = DateTimeOffset.UtcNow;
-            foreach (var candidate in candidates)
-            {
-                var item = candidate.Item;
-                var itemId = item.Id.ToString("N");
-                var entry = queue.Items.FirstOrDefault(value =>
-                    string.Equals(value.ItemId, itemId, StringComparison.OrdinalIgnoreCase));
-                if (entry == null)
-                {
-                    entry = new JavDbMetadataEventQueueItem
-                    {
-                        ItemId = itemId,
-                        EnqueuedAtUtc = nowUtc
-                    };
-                    queue.Items.Add(entry);
-                }
-
-                entry.Name = item.Name;
-                entry.Path = item.Path ?? string.Empty;
-                entry.Reason = "nightly_scan";
-                entry.Force |= candidate.IsFailure;
-                entry.NextAttemptAtUtc = nowUtc;
-                entry.UpdatedAtUtc = nowUtc;
-            }
-
-            queue.UpdatedAtUtc = nowUtc;
-            await JavDbMetadataEventQueueStore.SaveAsync(_queueFilePath, queue, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            _queueGate.Release();
-        }
-
-        _logger.Info(
-            "JAVDB 夜间兜底扫描完成 | 媒体库范围={0} | 范围内影片={1} | 入队影片={2} | 上限={3}",
-            scope.Description, scope.Items.Count, candidates.Count, MaxNightlyFallbackItems);
     }
 
     private async Task ObserveBackgroundTaskAsync(Task task, string operation)

@@ -551,34 +551,10 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableJavDbMetadataEventQueue { get; set; } = true;
 
 #if __EMBY__
-    [DisplayName("启用 JAVDB 夜间兜底扫描")]
-    [Description("每天 03:30 补查遗漏和失败影片，最多 500 部；同样受 10 秒限速。")]
-#endif
-    public bool EnableJavDbMetadataNightlyScan { get; set; } = true;
-
-#if __EMBY__
     [DisplayName("JAVDB 主站域名")]
     [Browsable(false)]
 #endif
     public string JavDbPrimaryDomain { get; set; } = "https://javdb.com/";
-
-#if __EMBY__
-    [DisplayName("JAVDB 账号")]
-    [Description("JAVDB 主站账号，需与密码同时填写。")]
-#endif
-    public string JavDbUsername { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB 密码")]
-    [Description("JAVDB 主站密码，需与账号同时填写。")]
-#endif
-    public string JavDbPassword { get; set; } = string.Empty;
-
-#if __EMBY__
-    [DisplayName("JAVDB Cookie")]
-    [Description("JAVDB 主站 Cookie。")]
-#endif
-    public string JavDbCookie { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB API地址")]
@@ -587,8 +563,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public string JavDbApiUrl { get; set; } = "https://jdforrepam.com/api";
 
 #if __EMBY__
-    [DisplayName("JAVDB API Token")]
-    [Description("JAVDB 主站 API Token，可填写 Authorization、Bearer Token 或原始 Token。")]
+    [DisplayName("JAVDB Authorization")]
+    [Description("JAVDB 主站 Authorization，可填写 Authorization、Bearer Token 或原始 Token。")]
 #endif
     public string JavDbAuthorization { get; set; } = string.Empty;
 
