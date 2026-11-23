@@ -1262,14 +1262,15 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Name =>
 #if __EMBY__
-        "补充其他元数据";
+        // Emby orders scheduled tasks by Name. Leading spaces control display order without changing the visible title.
+        "\u0020\u0020\u0020补充其他元数据";
 #else
         "Replace Other Metadata from JAVDB";
 #endif
 
     public override string Description =>
 #if __EMBY__
-        "手动维护任务。新入库和遗漏影片通常由事件队列与每天 03:30 的夜间兜底扫描自动处理；本任务用于手动全量维护或集中修复。任务会先按插件设置从 JAVDB 补充其他元数据，再统一整理“中文字幕”流派、封面角标、流派替换、去重和排序。没有处理记录、替换项目发生变化或替换项目包含流派且流派为空时会进入 JAVDB 处理清单。JAVDB 请求由专属调度器串行执行，前后至少间隔 10 秒；其他刮削源不受影响。失败任务可在插件设置中的失败任务文本框里映射番号，删除对应行则标记为完成。\n\n如需再次全量运行点击下面“删除其它元数据”。";
+        "按插件设置从 JAVDB 补充其他元数据，并整理流派、角标和排序。无处理记录或设置变化时全量执行，否则增量执行；请求间隔至少 10 秒。";
 #else
         "Manual maintenance task. The task replaces selected metadata from JAVDB, then organizes Chinese subtitle genres, cover badges, genre substitutions, deduplication and sorting. New and missed items are normally processed by the event queue and the nightly fallback scan at 03:30. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. JAVDB requests are serialized with at least 10 seconds between requests; other providers are not affected.";
 #endif

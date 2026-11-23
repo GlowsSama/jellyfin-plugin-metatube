@@ -63,7 +63,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("仅获取基础元数据 (建议关闭)")]
-    [Description("开启时仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。\n\n关闭后会同时获取来源站点的流派、标签、工作室、评分或导演等其他数据，如需统一格式可运行计划任务-补充其他元数据。\n\n从JAVDB获取的其他数据格式更统一更规整。")]
+    [Description("开启时仅获取番号、标题、演员和发行时间；关闭时同时获取来源站点的其它元数据。如需统一格式，可运行“补充其他元数据”。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
@@ -219,8 +219,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("媒体库自定义刮削源")]
-    [Description(
-        "每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：\n骑兵:FANZA,MGS\n步兵:JAVBUS,AVMOO\n填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。")]
+    [Description("格式：媒体库名称:来源1,来源2。每行一个，支持空格和符号。JAVDB 维护任务仅处理已配置媒体库；留空为全库。")]
     [EditMultiline(8)]
 #endif
     public string LibraryProviderFilterRules { get; set; } = string.Empty;
@@ -498,8 +497,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("其它元数据")]
-    [Description(
-        "新入库影片会由事件队列自动补充以上勾选的项目，未勾选的项目保持不变。计划任务“补充其他元数据”会先补充 JAVDB 数据，再统一整理流派、封面角标和排序。")]
+    [Description("新入库影片自动补充勾选项；计划任务“补充其他元数据”同时整理流派、角标和排序。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif
@@ -548,15 +546,13 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("启用 JAVDB 新入库事件补全")]
-    [Description(
-        "新入库影片稳定后自动进入持久化队列并补充所选元数据。JAVDB 请求串行执行，前后至少间隔 10 秒；此限速仅适用于 JAVDB，其他刮削源不受影响。")]
+    [Description("新入库影片自动补充所选元数据；JAVDB 请求间隔至少 10 秒。")]
 #endif
     public bool EnableJavDbMetadataEventQueue { get; set; } = true;
 
 #if __EMBY__
     [DisplayName("启用 JAVDB 夜间兜底扫描")]
-    [Description(
-        "每天 03:30 扫描遗漏或失败的影片，最多入队 500 部。JAVDB 请求串行执行，前后至少间隔 10 秒；此限速仅适用于 JAVDB，其他刮削源不受影响。")]
+    [Description("每天 03:30 补查遗漏和失败影片，最多 500 部；同样受 10 秒限速。")]
 #endif
     public bool EnableJavDbMetadataNightlyScan { get; set; } = true;
 
@@ -568,19 +564,19 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 账号")]
-    [Description("JAVDB 网页主站登录账号。账号密码、Cookie、API Token 可同时填写，但只会启用一种；优先级为 API Token > Cookie > 账号密码。")]
+    [Description("JAVDB 主站账号，需与密码同时填写。")]
 #endif
     public string JavDbUsername { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB 密码")]
-    [Description("JAVDB 登录密码，需要和账号同时填写。若填写 Cookie 或 API Token，则账号密码不会发送到服务端。")]
+    [Description("JAVDB 主站密码，需与账号同时填写。")]
 #endif
     public string JavDbPassword { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB Cookie")]
-    [Description("可从已登录浏览器复制完整 Cookie 请求头。填写 Cookie 后会忽略账号密码；若同时填写 API Token，则优先使用 API Token。")]
+    [Description("JAVDB 主站 Cookie。")]
 #endif
     public string JavDbCookie { get; set; } = string.Empty;
 
@@ -592,14 +588,13 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB API Token")]
-    [Description(
-        "可填写 Authorization、Bearer Token 或原始 Token。填写后优先使用 API Token，并忽略 Cookie 和账号密码；Token 不会发送到网页主站或备用域名。")]
+    [Description("JAVDB 主站 API Token，可填写 Authorization、Bearer Token 或原始 Token。")]
 #endif
     public string JavDbAuthorization { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("JAVDB 备用域名")]
-    [Description("按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。")]
+    [Description("多个域名用英文逗号分隔，按顺序轮询；主站仅用于登录兜底。")]
 #endif
     public string JavDbBackupDomains { get; set; } = string.Empty;
 
@@ -612,14 +607,14 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 成功记录")]
-    [Description("只读统计。成功记录保存在插件配置目录的 JSON 状态文件中，最多保留 10000 条。")]
+    [Description("只读统计，最多保留 10000 条。")]
     [ReadOnly(true)]
 #endif
     public int JavDbMetadataSuccessCount => GetJavDbMetadataSummary().SuccessCount;
 
 #if __EMBY__
     [DisplayName("JAVDB 失败记录")]
-    [Description("只读统计。可在下方失败任务文本框中编辑、映射或删除任务，最多保留 10000 条。")]
+    [Description("只读统计，最多保留 10000 条。")]
     [ReadOnly(true)]
 #endif
     public int JavDbMetadataFailureCount => GetJavDbMetadataSummary().FailureCount;
@@ -636,14 +631,14 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 上次运行")]
-    [Description("只读统计。时间按 Emby 服务器本地时区显示。")]
+    [Description("只读统计，按 Emby 本地时区显示。")]
     [ReadOnly(true)]
 #endif
     public string JavDbMetadataLastRun => FormatJavDbMetadataLastRun(GetJavDbMetadataSummary().LastRunAtUtc);
 
 #if __EMBY__
     [DisplayName("JAVDB 上次模式")]
-    [Description("只读统计。显示上一次任务执行的是全量替换、增量补全还是事件队列。")]
+    [Description("只读统计，显示上一次运行模式。")]
     [ReadOnly(true)]
 #endif
     public string JavDbMetadataLastMode => FormatJavDbMetadataLastMode(GetJavDbMetadataSummary().LastRunMode);
@@ -665,8 +660,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("JAVDB 失败任务")]
-    [Description(
-        "每行一个失败任务，也可以手动新增番号，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除，纯数字来源内部 ID 会被自动忽略。")]
+    [Description("每行一个番号，可手动新增。支持“原番号=实际番号”；删除该行视为完成，成功后会从列表移除。")]
     [EditMultiline(12)]
 #endif
     public string JavDbMetadataFailureTaskText

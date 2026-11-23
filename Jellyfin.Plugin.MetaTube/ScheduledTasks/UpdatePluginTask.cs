@@ -41,7 +41,8 @@ public class UpdatePluginTask : IScheduledTask
 
     public string Key => $"{Plugin.ProviderName}UpdatePlugin";
 
-    public string Name => "更新插件";
+    // Emby orders scheduled tasks by Name. Leading spaces control display order without changing the visible title.
+    public string Name => "\u0020更新插件";
 
     public string Description => $"将 {Plugin.ProviderName} 插件更新至最新版本。";
 

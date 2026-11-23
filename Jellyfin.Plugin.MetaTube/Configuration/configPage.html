@@ -150,6 +150,40 @@
         .metaTubeMetadataDropdownClear:hover {
             background-color: rgba(128, 128, 128, 0.12);
         }
+
+        .metaTubeJavDbAuthRow {
+            align-items: stretch;
+            display: grid;
+            gap: 0.65em;
+            grid-template-columns: minmax(10em, 0.24fr) minmax(0, 1fr);
+        }
+
+        .metaTubeJavDbAuthMode {
+            min-width: 0;
+        }
+
+        .metaTubeJavDbAuthFields {
+            display: grid;
+            gap: 0.65em;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            min-width: 0;
+        }
+
+        .metaTubeJavDbAuthInput {
+            box-sizing: border-box;
+            min-width: 0;
+            width: 100%;
+        }
+
+        @media (max-width: 720px) {
+            .metaTubeJavDbAuthRow {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .metaTubeJavDbAuthFields {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
     </style>
 </head>
 
@@ -211,7 +245,7 @@
                             <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
                             <span>仅获取基础元数据 (建议关闭)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启时仅获取番号、标题、演员和发行时间等基础元数据，不会获取流派、标签、工作室、评分或导演等其他数据。<br><br>关闭后会同时获取来源站点的流派、标签、工作室、评分或导演等其他数据，如需统一格式可运行计划任务-补充其他元数据。<br><br>从JAVDB获取的其他数据格式更统一更规整。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启时仅获取番号、标题、演员和发行时间；关闭时同时获取来源站点的其它元数据。如需统一格式，可运行“补充其他元数据”。</div>
                     </div>
 
                 </div>
@@ -277,7 +311,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabel-float inputLabelUnfocused" for="txtLibraryProviderFilterRules">媒体库自定义刮削源：</label>
                         <textarea class="emby-input" id="txtLibraryProviderFilterRules" is="emby-input" name="txtLibraryProviderFilterRules" rows="8"></textarea>
-                        <div class="fieldDescription">每行一个媒体库，格式为“媒体库名称:来源1,来源2”。例如：骑兵:FANZA,MGS；步兵:JAVBUS,AVMOO。媒体库名称支持空格、中文和 | 等符号。填写规则后，JAVDB 元数据维护任务也只处理这些媒体库；未填写时处理全库。</div>
+                        <div class="fieldDescription">格式：媒体库名称:来源1,来源2。每行一个，支持空格和符号。JAVDB 维护任务仅处理已配置媒体库；留空为全库。</div>
                     </div>
 
                 </div>
@@ -457,14 +491,14 @@
                         </summary>
                         <div class="metaTubeProviderFilterOptions metaTubeMetadataDropdownOptions" id="javDbReplacementFilterOptions" role="group" aria-label="其它元数据"></div>
                     </details>
-                    <div class="fieldDescription">新入库影片会由事件队列自动补充以上勾选的项目，未勾选的项目保持不变。计划任务“补充其他元数据”会先补充 JAVDB 数据，再统一整理流派、封面角标和排序。</div>
+                    <div class="fieldDescription">新入库影片自动补充勾选项；计划任务“补充其他元数据”同时整理流派、角标和排序。</div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableJavDbMetadataEventQueue" is="emby-checkbox" name="chkEnableJavDbMetadataEventQueue" type="checkbox"/>
                             <span>启用 JAVDB 新入库事件补全</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">新入库影片稳定后自动进入持久化队列并补充所选元数据。JAVDB 请求串行执行，前后至少间隔 10 秒；此限速仅适用于 JAVDB，其他刮削源不受影响。</div>
+                        <div class="fieldDescription checkboxFieldDescription">新入库影片自动补充所选元数据；JAVDB 请求间隔至少 10 秒。</div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -472,37 +506,33 @@
                             <input id="chkEnableJavDbMetadataNightlyScan" is="emby-checkbox" name="chkEnableJavDbMetadataNightlyScan" type="checkbox"/>
                             <span>启用 JAVDB 夜间兜底扫描</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">每天 03:30 扫描遗漏或失败的影片，最多入队 500 部；夜间扫描不会绕过 JAVDB 专属的 10 秒请求间隔。</div>
+                        <div class="fieldDescription checkboxFieldDescription">每天 03:30 补查遗漏和失败影片，最多 500 部；同样受 10 秒限速。</div>
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbUsername">JAVDB 账号：</label>
-                        <input id="txtJavDbUsername" is="emby-input" name="txtJavDbUsername" type="text" autocomplete="username"/>
-                        <div class="fieldDescription">账号密码、Cookie、API Token 可同时填写，但只会启用一种；优先级为 API Token &gt; Cookie &gt; 账号密码。主站固定为 https://javdb.com/，仅在备用站明确要求登录时用于兜底。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbPassword">JAVDB 密码：</label>
-                        <input id="txtJavDbPassword" is="emby-input" name="txtJavDbPassword" type="password" autocomplete="new-password"/>
-                        <div class="fieldDescription">需要和账号同时填写。若填写 Cookie 或 API Token，则账号密码不会发送到服务端。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbCookie">JAVDB Cookie：</label>
-                        <textarea class="emby-input" id="txtJavDbCookie" is="emby-input" name="txtJavDbCookie" rows="3" spellcheck="false" autocomplete="off"></textarea>
-                        <div class="fieldDescription">可从已登录浏览器复制完整 Cookie 请求头，例如 session=...; cf_clearance=...。填写后会忽略账号密码；若同时填写 API Token，则优先使用 API Token。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="txtJavDbAuthorization">JAVDB API Token：</label>
-                        <textarea class="emby-input" id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" rows="3" spellcheck="false" autocomplete="off"></textarea>
-                        <div class="fieldDescription">可填写 Authorization、Bearer Token 或原始 Token。填写后会忽略 Cookie 和账号密码；API 地址固定为 https://jdforrepam.com/api，Token 不会发送到网页主站或备用域名。</div>
+                        <label class="inputLabel inputLabelUnfocused" for="selectJavDbAuthMode">JAVDB 登录：</label>
+                        <div class="metaTubeJavDbAuthRow">
+                            <div class="metaTubeJavDbAuthMode">
+                                <select class="emby-select-withcolor emby-select" id="selectJavDbAuthMode" is="emby-select" name="selectJavDbAuthMode">
+                                    <option value="password">账号密码</option>
+                                    <option value="cookie">Cookie</option>
+                                    <option value="token">API Token</option>
+                                </select>
+                            </div>
+                            <div class="metaTubeJavDbAuthFields" id="javDbPasswordAuthFields">
+                                <input class="metaTubeJavDbAuthInput" id="txtJavDbUsername" is="emby-input" name="txtJavDbUsername" placeholder="账号" type="text" autocomplete="username"/>
+                                <input class="metaTubeJavDbAuthInput" id="txtJavDbPassword" is="emby-input" name="txtJavDbPassword" placeholder="密码" type="password" autocomplete="new-password"/>
+                            </div>
+                            <input class="metaTubeJavDbAuthInput" id="txtJavDbCookie" is="emby-input" name="txtJavDbCookie" placeholder="Cookie" style="display: none;" type="text" spellcheck="false" autocomplete="off"/>
+                            <input class="metaTubeJavDbAuthInput" id="txtJavDbAuthorization" is="emby-input" name="txtJavDbAuthorization" placeholder="API Token" style="display: none;" type="text" spellcheck="false" autocomplete="off"/>
+                        </div>
+                        <div class="fieldDescription" id="javDbAuthDescription">仅在备用站要求登录时，使用主站账号密码兜底。</div>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbBackupDomains">JAVDB 备用域名：</label>
                         <input id="txtJavDbBackupDomains" is="emby-input" name="txtJavDbBackupDomains" type="text"/>
-                        <div class="fieldDescription">按顺序轮询的匿名站点。多个域名使用英文逗号分隔；主站仅用于登录兜底。</div>
+                        <div class="fieldDescription">多个域名用英文逗号分隔，按顺序轮询；主站仅用于登录兜底。</div>
                     </div>
 
                     <div class="inputContainer" style="display: none;">
@@ -531,13 +561,13 @@
                         <div class="fieldDescription" id="txtJavDbMetadataLastMode">尚未运行</div>
                     </div>
 
-                    <div class="fieldDescription">新入库和必要更新由事件队列自动处理；每天 03:30 的兜底扫描会补查遗漏或失败影片。计划任务“补充其他元数据”用于手动维护：先补充 JAVDB 数据，再统一整理流派、封面角标、替换、去重和排序。<br><br>JAVDB 请求由专属调度器串行执行，前后至少间隔 10 秒；该限速只作用于 JAVDB，其他刮削源不受影响。如需再次全量运行，点击下面“删除其它元数据”。</div>
+                    <div class="fieldDescription">事件队列自动处理新入库，03:30 补查遗漏和失败影片。手动维护请运行“补充其他元数据”。JAVDB 请求间隔至少 10 秒，其他刮削源不受影响。</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtJavDbMetadataFailureTasks">JAVDB 失败任务：</label>
                         <textarea class="emby-input" id="txtJavDbMetadataFailureTasks" is="emby-input" name="txtJavDbMetadataFailureTasks" rows="12" spellcheck="false"></textarea>
                         <div class="fieldDescription">
-                            每行一个失败任务，也可以手动新增番号，保存设置后在下次任务运行时生效。删除某行会将对应任务标记为完成，不再参与后续增量任务；如果番号识别错误，可写成“原番号=实际番号”，例如 HEYZO-0258=HEYZO-258、041914_793=041914-793。任务成功后会自动从列表中移除。
+                            每行一个番号，可手动新增。支持“原番号=实际番号”；删除该行视为完成，成功后会从列表移除。
                         </div>
                     </div>
                 </div>
@@ -867,6 +897,32 @@
             }
         });
 
+        function updateJavDbAuthFields(mode) {
+            var authMode = mode || "password";
+            var isPassword = authMode === "password";
+            var isCookie = authMode === "cookie";
+            var isToken = authMode === "token";
+            var description;
+
+            $('#javDbPasswordAuthFields').css('display', isPassword ? 'grid' : 'none');
+            $('#txtJavDbCookie').css('display', isCookie ? 'block' : 'none');
+            $('#txtJavDbAuthorization').css('display', isToken ? 'block' : 'none');
+
+            if (isCookie) {
+                description = "仅在备用站要求登录时，使用主站 Cookie 兜底。";
+            } else if (isToken) {
+                description = "仅在备用站要求登录时，使用主站 API Token 兜底。";
+            } else {
+                description = "仅在备用站要求登录时，使用主站账号密码兜底。";
+            }
+
+            $('#javDbAuthDescription').text(description);
+        }
+
+        $('#selectJavDbAuthMode').on('change', function () {
+            updateJavDbAuthFields(this.value);
+        });
+
         $('.MetaTubeConfigurationPage').on('pageshow', function () {
             Dashboard.showLoadingMsg();
             var page = this;
@@ -899,6 +955,13 @@
                 $('#txtJavDbPassword', page).val(config.JavDbPassword).change();
                 $('#txtJavDbCookie', page).val(config.JavDbCookie).change();
                 $('#txtJavDbAuthorization', page).val(config.JavDbAuthorization || '').change();
+                var javDbAuthMode = config.JavDbAuthorization
+                    ? "token"
+                    : config.JavDbCookie
+                        ? "cookie"
+                        : "password";
+                $('#selectJavDbAuthMode', page).val(javDbAuthMode).change();
+                updateJavDbAuthFields(javDbAuthMode);
                 $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
                 $('#txtNameTemplate', page).val(config.NameTemplate).change();
@@ -961,10 +1024,11 @@
                 config.JavDbApiUrl = 'https://jdforrepam.com/api';
                 config.JavDbPrimaryDomain = 'https://javdb.com/';
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
-                config.JavDbUsername = $('#txtJavDbUsername', form).val();
-                config.JavDbPassword = $('#txtJavDbPassword', form).val();
-                config.JavDbCookie = $('#txtJavDbCookie', form).val();
-                config.JavDbAuthorization = $('#txtJavDbAuthorization', form).val();
+                var javDbAuthMode = $('#selectJavDbAuthMode', form).val();
+                config.JavDbUsername = javDbAuthMode === "password" ? $('#txtJavDbUsername', form).val() : "";
+                config.JavDbPassword = javDbAuthMode === "password" ? $('#txtJavDbPassword', form).val() : "";
+                config.JavDbCookie = javDbAuthMode === "cookie" ? $('#txtJavDbCookie', form).val() : "";
+                config.JavDbAuthorization = javDbAuthMode === "token" ? $('#txtJavDbAuthorization', form).val() : "";
                 config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');
                 config.NameTemplate = $('#txtNameTemplate', form).val();
