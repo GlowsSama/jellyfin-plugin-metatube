@@ -267,7 +267,10 @@ internal static class JavDbMetadataStateStore
         }
         catch (JsonException)
         {
-            return new JavDbMetadataState();
+            PreserveCorruptStateFile(stateFilePath);
+            var state = new JavDbMetadataState();
+            await WriteStateFileAsync(stateFilePath, state, cancellationToken).ConfigureAwait(false);
+            return state;
         }
     }
 
@@ -279,8 +282,24 @@ internal static class JavDbMetadataStateStore
         }
         catch (JsonException)
         {
-            return new JavDbMetadataState();
+            PreserveCorruptStateFile(stateFilePath);
+            var state = new JavDbMetadataState();
+            WriteStateFile(stateFilePath, state);
+            return state;
         }
+    }
+
+    private static void PreserveCorruptStateFile(string stateFilePath)
+    {
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var corruptPath = $"{stateFilePath}.corrupt-{timestamp}";
+        var suffix = 1;
+        while (File.Exists(corruptPath))
+        {
+            corruptPath = $"{stateFilePath}.corrupt-{timestamp}-{suffix++}";
+        }
+
+        File.Move(stateFilePath, corruptPath);
     }
 
     private static JavDbMetadataState DeserializeState(string json)

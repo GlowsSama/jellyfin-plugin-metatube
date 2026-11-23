@@ -107,10 +107,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         var includeGenres = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbGenres);
         var includeTags = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbTags);
         var includeStudios = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbStudios);
-        var includeActors = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbActors);
-        var includeDirectors = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbDirectors);
         var includeRating = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbRating);
-        var includeReleaseDate = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbReleaseDate);
 
         // Build parameters.
         var parameters = new Dictionary<string, string>
@@ -145,8 +142,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 OriginalTitle = originalTitle,
                 Overview = m.Summary,
                 OfficialRating = Rating,
-                PremiereDate = includeReleaseDate ? m.ReleaseDate.GetValidDateTime() : null,
-                ProductionYear = includeReleaseDate ? m.ReleaseDate.GetValidYear() : null,
+                PremiereDate = m.ReleaseDate.GetValidDateTime(),
+                ProductionYear = m.ReleaseDate.GetValidYear(),
                 CommunityRating = includeRating && m.Score > 0
                     ? (float?)Math.Round(m.Score * 2, 1)
                     : null,
@@ -190,9 +187,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         // Add actors.
-        foreach (var name in includeActors
-                     ? m.Actors ?? Enumerable.Empty<string>()
-                     : Enumerable.Empty<string>())
+        foreach (var name in m.Actors ?? Enumerable.Empty<string>())
         {
             var actor = new PersonInfo
             {
@@ -207,9 +202,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             result.AddPerson(actor);
         }
 
-        foreach (var name in includeDirectors
-                     ? SplitPersonNames(m.Director)
-                     : Enumerable.Empty<string>())
+        foreach (var name in SplitPersonNames(m.Director))
         {
             result.AddPerson(new PersonInfo
             {
@@ -290,12 +283,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             {
                 Name = GetRemoteSearchResultName(m),
                 SearchProviderName = Name,
-                PremiereDate = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbReleaseDate)
-                    ? m.ReleaseDate.GetValidDateTime()
-                    : null,
-                ProductionYear = ShouldIncludeSourceMetadata(Configuration.ReplaceJavDbReleaseDate)
-                    ? m.ReleaseDate.GetValidYear()
-                    : null,
+                PremiereDate = m.ReleaseDate.GetValidDateTime(),
+                ProductionYear = m.ReleaseDate.GetValidYear(),
                 ImageUrl = ApiClient.GetPrimaryImageApiUrl(m.Provider, m.Id, m.ThumbUrl, 1.0, true)
             };
             // A selected remote result is an exact provider choice. A later

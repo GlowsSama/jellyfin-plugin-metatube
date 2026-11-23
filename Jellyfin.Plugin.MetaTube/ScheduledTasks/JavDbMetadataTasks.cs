@@ -16,12 +16,6 @@ using Jellyfin.Data.Enums;
 using Microsoft.Extensions.Logging;
 #endif
 
-#if __EMBY__
-using JavDbPremiereDate = System.DateTimeOffset;
-#else
-using JavDbPremiereDate = System.DateTime;
-#endif
-
 namespace Jellyfin.Plugin.MetaTube.ScheduledTasks;
 
 public abstract class JavDbMetadataTaskBase : IScheduledTask
@@ -47,9 +41,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex DetailIdPattern = new(
         @"^(?=.*[A-Za-z])[A-Za-z0-9]{4,20}$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex PersonNameSeparatorPattern = new(
-        @"\s*[,，、;/；|｜]\s*",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly HashSet<string> IgnoredNumberPrefixes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -166,21 +157,22 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         var plan = JavDbMetadataSyncPlanner.Create(
-            libraryScope.Items, state, GetJavDbKeyword, selection.Genres);
-        var clearedCompletedFailures = RemoveCompletedGenreFailures(state, plan.GenreCompletedItems);
+            libraryScope.Items, state, GetJavDbKeyword, selection);
+        var clearedCompletedFailures = RemoveCompletedMetadataFailures(state, plan.CompletedMetadataItems);
         if (clearedCompletedFailures > 0)
         {
             _logger.Info(
-                "JAVDB 已完成影片的失败记录清理 | 流派非空项目={0} | 移除失败记录={1}",
-                plan.GenreCompletedItems.Count, clearedCompletedFailures);
+                "JAVDB 已完成影片的失败记录清理 | 元数据齐全项目={0} | 移除失败记录={1}",
+                plan.CompletedMetadataItems.Count, clearedCompletedFailures);
         }
 
         var itemList = plan.PendingItems;
         _logger.Info(
-            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 全库影片={3} | 媒体库范围={4} | 范围内影片={5} | 媒体库范围跳过={6} | 无番号跳过={7} | 记录跳过={8} | 流派非空跳过={9} | 流派为空待补={10} | 待处理={11} | 成功记录={12} | 失败记录={13}",
+            "JAVDB 元数据任务开始 | 模式={0} | 原因={1} | 替换项目={2} | 全库影片={3} | 媒体库范围={4} | 范围内影片={5} | 媒体库范围跳过={6} | 无番号跳过={7} | 记录跳过={8} | 元数据齐全跳过={9} | 所选元数据缺失待补={10} | 待处理={11} | 成功记录={12} | 失败记录={13}",
             plan.ModeLabel, plan.ModeReason, selection.Signature, allItems.Count, libraryScope.Description,
             libraryScope.Items.Count, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
-            plan.SkippedByStateCount, plan.SkippedByGenreCount, plan.PendingByEmptyGenreCount,
+            plan.SkippedByStateCount, plan.SkippedByCompletedMetadataCount,
+            plan.PendingByMissingMetadataCount,
             itemList.Count, state.Successes.Count, state.Failures.Count);
         progress?.Report(0);
 
@@ -223,9 +215,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 libraryScope.Items, _libraryManager, _logger, cancellationToken, progress, 85, 100)
             .ConfigureAwait(false);
         _logger.Info(
-            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 整理元数据={3} | 媒体库范围跳过={4} | 无番号跳过={5} | 记录跳过={6} | 流派非空跳过={7} | 状态文件={8}",
+            "JAVDB 元数据任务完成 | 模式={0} | 更新={1} | 失败={2} | 整理元数据={3} | 媒体库范围跳过={4} | 无番号跳过={5} | 记录跳过={6} | 元数据齐全跳过={7} | 状态文件={8}",
             plan.ModeLabel, updated, failed, organized, libraryScope.SkippedItemCount, plan.SkippedWithoutNumberCount,
-            plan.SkippedByStateCount, plan.SkippedByGenreCount, _stateFilePath);
+            plan.SkippedByStateCount, plan.SkippedByCompletedMetadataCount, _stateFilePath);
         progress?.Report(100);
     }
 
@@ -260,7 +252,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         }
 
         var keyword = keywords[0];
-        var original = CaptureSnapshot(item, selection.HasPeople);
+        var original = CaptureSnapshot(item);
         var metadataCleared = false;
         try
         {
@@ -269,10 +261,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 Genres = selection.Genres ? Array.Empty<string>() : original.Genres,
                 Tags = selection.Tags ? Array.Empty<string>() : original.Tags,
                 Studios = selection.Studios ? Array.Empty<string>() : original.Studios,
-                CommunityRating = selection.Rating ? null : original.CommunityRating,
-                PremiereDate = selection.ReleaseDate ? null : original.PremiereDate,
-                ProductionYear = selection.ReleaseDate ? null : original.ProductionYear,
-                People = selection.HasPeople ? RemoveSelectedPeople(original.People, selection) : null
+                CommunityRating = selection.Rating ? null : original.CommunityRating
             };
             metadataCleared = true;
             await ApplyMetadataAsync(item, cleared, selection, cancellationToken).ConfigureAwait(false);
@@ -378,18 +367,9 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 Genres = selection.Genres ? BuildGenres(info.Genres) : original.Genres,
                 Tags = selection.Tags ? BuildTags(info.Series) : original.Tags,
                 Studios = selection.Studios ? BuildStudios(info.Maker, info.Label) : original.Studios,
-                CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating,
-                PremiereDate = selection.ReleaseDate
-                    ? GetPremiereDate(info.ReleaseDate)
-                    : original.PremiereDate,
-                ProductionYear = selection.ReleaseDate
-                    ? info.ReleaseDate.GetValidYear()
-                    : original.ProductionYear,
-                People = selection.HasPeople
-                    ? BuildPeopleWithJavDbSelections(original.People, info.Actors, info.Director, selection)
-                    : null
+                CommunityRating = selection.Rating ? BuildRating(info.Score) : original.CommunityRating
             };
-            var current = CaptureSnapshot(item, selection.HasPeople);
+            var current = CaptureSnapshot(item);
             var needsApply = HasChanges(current, desired, selection);
             var itemUpdated = HasChanges(original, desired, selection);
 
@@ -453,7 +433,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return TrySaveStateAsync(state, cancellationToken);
     }
 
-    private static int RemoveCompletedGenreFailures(
+    private static int RemoveCompletedMetadataFailures(
         JavDbMetadataState state,
         IEnumerable<BaseItem> completedItems)
     {
@@ -939,37 +919,15 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return "unknown";
     }
 
-    private static JavDbPremiereDate? GetPremiereDate(DateTime releaseDate)
-    {
-        var validDate = releaseDate.GetValidDateTime();
-#if __EMBY__
-        return validDate.HasValue ? new DateTimeOffset(validDate.Value) : null;
-#else
-        return validDate;
-#endif
-    }
-
-    private JavDbMetadataSnapshot CaptureSnapshot(BaseItem item, bool includePeople)
+    private static JavDbMetadataSnapshot CaptureSnapshot(BaseItem item)
     {
         return new JavDbMetadataSnapshot
         {
             Genres = CloneValues(item.Genres),
             Tags = CloneValues(item.Tags),
             Studios = CloneValues(item.Studios),
-            CommunityRating = item.CommunityRating,
-            PremiereDate = item.PremiereDate,
-            ProductionYear = item.ProductionYear,
-            People = includePeople ? ClonePeople(GetPeople(item)) : null
+            CommunityRating = item.CommunityRating
         };
-    }
-
-    private List<PersonInfo> GetPeople(BaseItem item)
-    {
-#if __EMBY__
-        return _libraryManager.GetItemPeople(item) ?? new List<PersonInfo>();
-#else
-        return _libraryManager.GetPeople(item)?.ToList() ?? new List<PersonInfo>();
-#endif
     }
 
     private async Task ApplyMetadataAsync(
@@ -978,7 +936,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         JavDbReplacementSelection selection,
         CancellationToken cancellationToken)
     {
-        var original = CaptureSnapshot(item, selection.HasPeople);
+        var original = CaptureSnapshot(item);
         try
         {
             JavDbMetadataEventSuppressor.Suppress(item.Id, TimeSpan.FromSeconds(45));
@@ -990,36 +948,19 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
                 item.Studios = CloneValues(target.Studios);
             if (selection.Rating)
                 item.CommunityRating = target.CommunityRating;
-            if (selection.ReleaseDate)
-            {
-                item.PremiereDate = target.PremiereDate;
-                item.ProductionYear = target.ProductionYear;
-            }
 
 #if __EMBY__
-            if (selection.HasMetadata)
+            if (selection.HasAny)
             {
                 _libraryManager.UpdateItem(item, item, ItemUpdateType.MetadataEdit, null);
             }
 
-            if (selection.HasPeople)
-            {
-                _libraryManager.UpdatePeople(item, ClonePeople(target.People), false);
-            }
-
             await Task.CompletedTask.ConfigureAwait(false);
 #else
-            if (selection.HasMetadata)
+            if (selection.HasAny)
             {
                 await _libraryManager
                     .UpdateItemAsync(item, item, ItemUpdateType.MetadataEdit, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (selection.HasPeople)
-            {
-                await _libraryManager
-                    .UpdatePeopleAsync(item, ClonePeople(target.People), cancellationToken)
                     .ConfigureAwait(false);
             }
 #endif
@@ -1062,11 +1003,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
             item.Studios = CloneValues(snapshot.Studios);
         if (selection.Rating)
             item.CommunityRating = snapshot.CommunityRating;
-        if (selection.ReleaseDate)
-        {
-            item.PremiereDate = snapshot.PremiereDate;
-            item.ProductionYear = snapshot.ProductionYear;
-        }
     }
 
     private static bool HasChanges(
@@ -1077,105 +1013,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return (selection.Genres && !HasSameValues(original.Genres, desired.Genres)) ||
                (selection.Tags && !HasSameValues(original.Tags, desired.Tags)) ||
                (selection.Studios && !HasSameValues(original.Studios, desired.Studios)) ||
-               (selection.Rating && original.CommunityRating != desired.CommunityRating) ||
-               (selection.ReleaseDate &&
-                (original.PremiereDate != desired.PremiereDate ||
-                 original.ProductionYear != desired.ProductionYear)) ||
-               (selection.Actors && !HasSamePersonNames(original.People, desired.People, false)) ||
-               (selection.Directors && !HasSamePersonNames(original.People, desired.People, true));
-    }
-
-    private static List<PersonInfo> BuildPeopleWithJavDbSelections(
-        IEnumerable<PersonInfo> currentPeople,
-        IEnumerable<string> javDbActors,
-        string javDbDirectors,
-        JavDbReplacementSelection selection)
-    {
-        var people = ClonePeople(currentPeople);
-        if (selection.Actors)
-            people = ReplacePeople(people, CleanValues(javDbActors), false);
-        if (selection.Directors)
-            people = ReplacePeople(people, SplitPersonNames(javDbDirectors), true);
-        return people;
-    }
-
-    private static List<PersonInfo> ReplacePeople(
-        IEnumerable<PersonInfo> currentPeople,
-        IEnumerable<string> names,
-        bool directors)
-    {
-        var people = ClonePeople((currentPeople ?? Enumerable.Empty<PersonInfo>())
-            .Where(person => directors ? !IsDirector(person) : !IsActor(person)));
-        foreach (var name in names)
-        {
-            people.Add(new PersonInfo
-            {
-                Name = name,
-#if __EMBY__
-                Type = directors ? PersonType.Director : PersonType.Actor
-#else
-                Type = directors ? PersonKind.Director : PersonKind.Actor
-#endif
-            });
-        }
-
-        return people;
-    }
-
-    private static List<PersonInfo> RemoveSelectedPeople(
-        IEnumerable<PersonInfo> people,
-        JavDbReplacementSelection selection)
-    {
-        return ClonePeople((people ?? Enumerable.Empty<PersonInfo>())
-            .Where(person => !(selection.Actors && IsActor(person)) &&
-                             !(selection.Directors && IsDirector(person))));
-    }
-
-    private static bool IsActor(PersonInfo person)
-    {
-#if __EMBY__
-        return person?.Type == PersonType.Actor;
-#else
-        return person?.Type == PersonKind.Actor;
-#endif
-    }
-
-    private static bool IsDirector(PersonInfo person)
-    {
-#if __EMBY__
-        return person?.Type == PersonType.Director;
-#else
-        return person?.Type == PersonKind.Director;
-#endif
-    }
-
-    private static bool HasSamePersonNames(
-        IEnumerable<PersonInfo> currentPeople,
-        IEnumerable<PersonInfo> expectedPeople,
-        bool directors)
-    {
-        var currentNames = (currentPeople ?? Enumerable.Empty<PersonInfo>())
-            .Where(person => directors ? IsDirector(person) : IsActor(person))
-            .Select(person => person.Name)
-            .Where(name => !string.IsNullOrWhiteSpace(name));
-        var expectedNames = (expectedPeople ?? Enumerable.Empty<PersonInfo>())
-            .Where(person => directors ? IsDirector(person) : IsActor(person))
-            .Select(person => person.Name)
-            .Where(name => !string.IsNullOrWhiteSpace(name));
-        return currentNames.SequenceEqual(expectedNames, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static List<PersonInfo> ClonePeople(IEnumerable<PersonInfo> people)
-    {
-        return (people ?? Enumerable.Empty<PersonInfo>())
-            .Where(person => person != null)
-            .Select(person => new PersonInfo
-            {
-                Name = person.Name,
-                Role = person.Role,
-                Type = person.Type
-            })
-            .ToList();
+               (selection.Rating && original.CommunityRating != desired.CommunityRating);
     }
 
     private static string[] CloneValues(IEnumerable<string> values)
@@ -1203,13 +1041,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         return score > 0 ? (float?)Math.Round(score * 2, 1) : null;
     }
 
-    private static IEnumerable<string> SplitPersonNames(string value)
-    {
-        return string.IsNullOrWhiteSpace(value)
-            ? Enumerable.Empty<string>()
-            : CleanValues(PersonNameSeparatorPattern.Split(value));
-    }
-
     private static IEnumerable<string> CleanValues(IEnumerable<string> values)
     {
         return (values ?? Enumerable.Empty<string>())
@@ -1233,12 +1064,6 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         public string[] Studios { get; init; } = Array.Empty<string>();
 
         public float? CommunityRating { get; init; }
-
-        public JavDbPremiereDate? PremiereDate { get; init; }
-
-        public int? ProductionYear { get; init; }
-
-        public List<PersonInfo> People { get; init; }
     }
 }
 

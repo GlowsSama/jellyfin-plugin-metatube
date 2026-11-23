@@ -19,18 +19,18 @@ internal sealed class JavDbMetadataSyncPlan
 
     public List<BaseItem> PendingItems { get; set; } = new();
 
-    public List<BaseItem> GenreCompletedItems { get; set; } = new();
+    public List<BaseItem> CompletedMetadataItems { get; set; } = new();
 
     public int SkippedWithoutNumberCount { get; set; }
 
     public int SkippedByStateCount { get; set; }
 
-    public int SkippedByGenreCount { get; set; }
+    public int SkippedByCompletedMetadataCount { get; set; }
 
-    public int PendingByEmptyGenreCount { get; set; }
+    public int PendingByMissingMetadataCount { get; set; }
 
     public int SkippedItemCount =>
-        SkippedWithoutNumberCount + SkippedByStateCount + SkippedByGenreCount;
+        SkippedWithoutNumberCount + SkippedByStateCount + SkippedByCompletedMetadataCount;
 
     public string ModeLabel => Mode switch
     {
@@ -46,9 +46,10 @@ internal static class JavDbMetadataSyncPlanner
         IEnumerable<BaseItem> items,
         JavDbMetadataState state,
         Func<BaseItem, string> keywordSelector,
-        bool useGenreCompletionMarker)
+        JavDbReplacementSelection selection)
     {
         state ??= new JavDbMetadataState();
+        selection ??= new JavDbReplacementSelection();
         var allItems = (items ?? Enumerable.Empty<BaseItem>())
             .Where(item => item != null)
             .GroupBy(item => item.Id)
@@ -66,58 +67,63 @@ internal static class JavDbMetadataSyncPlanner
             })
             .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Keyword))
             .ToList();
-        var useGenreMarker = mode == JavDbMetadataSyncMode.Incremental &&
-                             useGenreCompletionMarker;
-        var genreCompletedCandidates = useGenreMarker
-            ? candidates
-                .Where(candidate => HasGenres(candidate.Item))
-                .ToList()
-            : new List<Candidate>();
-        var genreCompletedIds = genreCompletedCandidates
+        var completedMetadataCandidates = mode == JavDbMetadataSyncMode.Full
+            ? new List<Candidate>()
+            : candidates
+                .Where(candidate =>
+                    !index.IsManuallyCompleted(candidate.Item, candidate.Keyword) &&
+                    !index.IsFailed(candidate.Item, candidate.Keyword) &&
+                    index.IsSuccessful(candidate.Item, candidate.Keyword) &&
+                    IsMetadataComplete(candidate.Item, selection))
+                .ToList();
+        var completedMetadataIds = completedMetadataCandidates
             .Select(candidate => candidate.Item.Id)
             .ToHashSet();
         var pendingCandidates = mode == JavDbMetadataSyncMode.Full
             ? candidates
-            : useGenreMarker
-                ? candidates
-                    .Where(candidate =>
-                        !genreCompletedIds.Contains(candidate.Item.Id) &&
-                        !index.IsManuallyCompleted(candidate.Item, candidate.Keyword))
-                    .ToList()
-                : candidates
-                    .Where(candidate => index.IsFailed(candidate.Item, candidate.Keyword) ||
-                                        !index.IsSuccessful(candidate.Item, candidate.Keyword))
-                    .ToList();
+            : candidates
+                .Where(candidate =>
+                    !completedMetadataIds.Contains(candidate.Item.Id) &&
+                    !index.IsManuallyCompleted(candidate.Item, candidate.Keyword))
+                .ToList();
 
         return new JavDbMetadataSyncPlan
         {
             Mode = mode,
             ModeReason = mode == JavDbMetadataSyncMode.Full
                 ? "没有成功记录，执行全量替换"
-                : useGenreMarker
-                    ? "存在成功记录，按流派空值扫描待补影片"
-                    : "存在成功记录，仅处理新影片和失败记录",
+                : "存在成功记录，按所选元数据是否完整执行增量补全",
             TotalItemCount = allItems.Count,
             PendingItems = pendingCandidates
                 .Select(candidate => candidate.Item)
                 .ToList(),
-            GenreCompletedItems = genreCompletedCandidates
+            CompletedMetadataItems = completedMetadataCandidates
                 .Select(candidate => candidate.Item)
                 .ToList(),
             SkippedWithoutNumberCount = allItems.Count - candidates.Count,
-            SkippedByGenreCount = genreCompletedCandidates.Count,
+            SkippedByCompletedMetadataCount = completedMetadataCandidates.Count,
             SkippedByStateCount = Math.Max(
                 0,
-                candidates.Count - pendingCandidates.Count - genreCompletedCandidates.Count),
-            PendingByEmptyGenreCount = useGenreMarker
-                ? pendingCandidates.Count(candidate => !HasGenres(candidate.Item))
-                : 0
+                candidates.Count - pendingCandidates.Count - completedMetadataCandidates.Count),
+            PendingByMissingMetadataCount =
+                pendingCandidates.Count(candidate => !IsMetadataComplete(candidate.Item, selection))
         };
     }
 
-    private static bool HasGenres(BaseItem item)
+    internal static bool IsMetadataComplete(BaseItem item, JavDbReplacementSelection selection)
     {
-        return item?.Genres?.Any(genre => !string.IsNullOrWhiteSpace(genre)) == true;
+        if (item == null || selection?.HasAny != true)
+            return true;
+
+        return (!selection.Genres || HasValues(item.Genres)) &&
+               (!selection.Tags || HasValues(item.Tags)) &&
+               (!selection.Studios || HasValues(item.Studios)) &&
+               (!selection.Rating || item.CommunityRating.HasValue);
+    }
+
+    private static bool HasValues(IEnumerable<string> values)
+    {
+        return values?.Any(value => !string.IsNullOrWhiteSpace(value)) == true;
     }
 
     private sealed class Candidate

@@ -582,10 +582,7 @@
             { value: "genres", label: "流派（标签）", configKey: "ReplaceJavDbGenres" },
             { value: "tags", label: "标签（系列）", configKey: "ReplaceJavDbTags" },
             { value: "studios", label: "工作室（厂牌、发行商）", configKey: "ReplaceJavDbStudios" },
-            { value: "actors", label: "演员名字", configKey: "ReplaceJavDbActors" },
-            { value: "directors", label: "导演信息", configKey: "ReplaceJavDbDirectors" },
-            { value: "rating", label: "评分", configKey: "ReplaceJavDbRating" },
-            { value: "releaseDate", label: "发行时间", configKey: "ReplaceJavDbReleaseDate" }
+            { value: "rating", label: "评分", configKey: "ReplaceJavDbRating" }
         ];
 
         function splitMovieProviderFilter(value) {
@@ -658,11 +655,50 @@
             allProviders.prop("indeterminate", selected.length > 0 && selected.length < total);
         }
 
-        function renderMovieProviderFilter(value) {
+        function getRemoteMovieProviderNames(payload) {
+            var data = payload && payload.data ? payload.data : payload;
+            var providers = data && data.movie_providers;
+            if (!providers) {
+                return [];
+            }
+
+            return Array.isArray(providers) ? providers : Object.keys(providers);
+        }
+
+        function loadRemoteMovieProviders(config) {
+            var server = (config.Server || "").trim().replace(/\/+$/, "");
+            if (!server || typeof fetch !== "function") {
+                return Promise.resolve([]);
+            }
+
+            var headers = { Accept: "application/json" };
+            if (config.Token) {
+                headers.Authorization = "Bearer " + config.Token;
+            }
+
+            return fetch(server + "/v1/providers", {
+                method: "GET",
+                headers: headers
+            }).then(function (response) {
+                if (!response.ok) {
+                    throw new Error("HTTP " + response.status);
+                }
+
+                return response.json();
+            }).then(getRemoteMovieProviderNames).catch(function (error) {
+                console.warn("Unable to load MetaTube providers:", error);
+                return [];
+            });
+        }
+
+        function renderMovieProviderFilter(value, remoteProviders) {
             var options = $('#movieProviderFilterOptions');
             var orderedProviders = [];
             var addProvider = function (provider) {
-                if (provider && !orderedProviders.some(function (item) {
+                provider = (provider || "").trim();
+                if (provider &&
+                    provider.toLowerCase() !== "javdb" &&
+                    !orderedProviders.some(function (item) {
                     return item.toLowerCase() === provider.toLowerCase();
                 })) {
                     orderedProviders.push(provider);
@@ -671,6 +707,7 @@
 
             splitMovieProviderFilter(value).forEach(addProvider);
             MetaTubeMovieProviders.forEach(addProvider);
+            (remoteProviders || []).forEach(addProvider);
             options.empty();
 
             var selectAllLabel = document.createElement("label");
@@ -865,12 +902,18 @@
                 $('#txtDefaultImageQuality', page).val(config.DefaultImageQuality).change();
                 config.EnableMovieProviderFilter = true;
                 renderMovieProviderFilter(config.RawMovieProviderFilter);
+                loadRemoteMovieProviders(config).then(function (remoteProviders) {
+                    if (!remoteProviders.length || !$.contains(document.documentElement, page)) {
+                        return;
+                    }
+
+                    renderMovieProviderFilter(getSelectedMovieProviders().join(","), remoteProviders);
+                });
                 page.querySelector('#chkEnableLibraryProviderFilter').checked = config.EnableLibraryProviderFilter;
                 $('#txtLibraryProviderFilterRules', page).val(config.LibraryProviderFilterRules).change();
                 page.querySelector('#chkEnableJavDbMetadataEventQueue').checked = config.EnableJavDbMetadataEventQueue;
                 $('#txtJavDbBackupDomains', page).val(config.JavDbBackupDomains).change();
                 $('#txtJavDbAuthorization', page).val(config.JavDbAuthorization || '').change();
-                $('#txtMissAvBackupDomains', page).val(config.MissAvBackupDomains).change();
                 page.querySelector('#chkEnableTemplate').checked = config.EnableTemplate;
                 $('#txtNameTemplate', page).val(config.NameTemplate).change();
                 $('#txtTaglineTemplate', page).val(config.TaglineTemplate).change();
@@ -909,10 +952,7 @@
                 config.ReplaceJavDbGenres = selectedJavDbReplacementFields.indexOf("genres") !== -1;
                 config.ReplaceJavDbTags = selectedJavDbReplacementFields.indexOf("tags") !== -1;
                 config.ReplaceJavDbStudios = selectedJavDbReplacementFields.indexOf("studios") !== -1;
-                config.ReplaceJavDbActors = selectedJavDbReplacementFields.indexOf("actors") !== -1;
-                config.ReplaceJavDbDirectors = selectedJavDbReplacementFields.indexOf("directors") !== -1;
                 config.ReplaceJavDbRating = selectedJavDbReplacementFields.indexOf("rating") !== -1;
-                config.ReplaceJavDbReleaseDate = selectedJavDbReplacementFields.indexOf("releaseDate") !== -1;
                 var failureTaskEditor = $('#txtJavDbMetadataFailureTasks', form);
                 var failureTaskText = failureTaskEditor.val() || '';
                 var initialFailureTaskText = failureTaskEditor.attr('data-initial-value') || '';
@@ -932,7 +972,6 @@
                 config.JavDbPrimaryDomain = 'https://javdb.com/';
                 config.JavDbBackupDomains = $('#txtJavDbBackupDomains', form).val();
                 config.JavDbAuthorization = $('#txtJavDbAuthorization', form).val();
-                config.MissAvBackupDomains = $('#txtMissAvBackupDomains', form).val();
                 config.EnableTemplate = $('#chkEnableTemplate', form).prop('checked');
                 config.NameTemplate = $('#txtNameTemplate', form).val();
                 config.TaglineTemplate = $('#txtTaglineTemplate', form).val();
@@ -943,7 +982,7 @@
                 config.GoogleApiKey = $('#txtGoogleApiKey', form).val();
                 config.GoogleApiUrl = $('#txtGoogleApiUrl', form).val();
                 config.DeepLApiKey = $('#txtDeepLApiKey', form).val();
-                config.DeepLXAltUrl = $('#txtDeepLApiUrl', form).val();
+                config.DeepLApiUrl = $('#txtDeepLApiUrl', form).val();
                 config.OpenAiApiKey = $('#txtOpenAiApiKey', form).val();
                 config.OpenAiApiUrl = $('#txtOpenAiApiUrl', form).val();
                 config.OpenAiModel = $('#txtOpenAiModel', form).val();

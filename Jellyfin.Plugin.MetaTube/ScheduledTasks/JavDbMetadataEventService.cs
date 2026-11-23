@@ -120,6 +120,9 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
             return;
 
         var selection = JavDbReplacementSelection.FromConfiguration(configuration);
+        if (!selection.HasAny)
+            return;
+
         if (item is not Movie ||
             string.IsNullOrWhiteSpace(item.Name) ||
             !MetadataOrganizer.IsMetaTubeItem(item))
@@ -134,7 +137,7 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
         var state = await _processor.LoadStateForEventAsync(cancellationToken).ConfigureAwait(false);
         var isFailure = IsFailureRecord(state, item);
         var isSuccess = IsSuccessRecord(state, item);
-        var needsGenreRepair = selection.Genres && !HasGenres(item);
+        var needsMetadata = !JavDbMetadataSyncPlanner.IsMetadataComplete(item, selection);
 
         await _queueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -148,7 +151,7 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
             var pathChanged = existing != null &&
                               !string.Equals(existing.Path, item.Path, StringComparison.OrdinalIgnoreCase);
             var shouldQueue = force || existing != null || pathChanged || isFailure || !isSuccess ||
-                              needsGenreRepair || !selection.HasAny;
+                              needsMetadata;
             if (!shouldQueue)
                 return;
 
@@ -334,7 +337,8 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
         var state = await _processor.LoadStateForEventAsync(cancellationToken).ConfigureAwait(false);
         var isFailure = IsFailureRecord(state, item);
         var isSuccess = IsSuccessRecord(state, item);
-        if (!queueItem.Force && isSuccess && (!selection.Genres || HasGenres(item)) && !isFailure)
+        if (!queueItem.Force && isSuccess && !isFailure &&
+            JavDbMetadataSyncPlanner.IsMetadataComplete(item, selection))
         {
             await MetadataOrganizer.OrganizeItemAsync(item, _libraryManager, _logger, cancellationToken)
                 .ConfigureAwait(false);
@@ -485,11 +489,6 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
         {
             _logger.Error("JAVDB 事件协调器失败 | 操作={0} | 错误={1}", operation, exception.Message);
         }
-    }
-
-    private static bool HasGenres(BaseItem item)
-    {
-        return item?.Genres?.Any(genre => !string.IsNullOrWhiteSpace(genre)) == true;
     }
 
     private static bool IsFailureRecord(JavDbMetadataState state, BaseItem item)

@@ -490,14 +490,14 @@ public class PluginConfiguration : BasePluginConfiguration
     public string OpenAiPrompt { get; set; } = string.Empty;
 
 #if __EMBY__
-    [DisplayName("不获取其它元数据(建议关闭,建议关闭,建议关闭)")]
-    [Description("其它元数据在下方勾选。关闭时保留来源站点的全部可用元数据；开启时跳过已勾选字段，需运行“补充其他元数据”从 JAVDB 补全。")]
+    [DisplayName("不获取其它元数据 (建议关闭)")]
+    [Description("开启后仅使用来源站点的基础元数据，下方勾选的流派、标签、工作室和评分需通过“补充其他元数据”从 JAVDB 获取；关闭时直接使用来源站点提供的这些数据。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
 
 #if __EMBY__
     [DisplayName("其它元数据")]
-    [Description("新入库影片自动补充勾选项；计划任务“补充其他元数据”同时整理流派、角标和排序。")]
+    [Description("勾选需要从 JAVDB 补充的项目；计划任务“补充其他元数据”同时整理流派、角标和排序。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif
@@ -509,10 +509,7 @@ public class PluginConfiguration : BasePluginConfiguration
             if (ReplaceJavDbGenres) selected.Add("genres");
             if (ReplaceJavDbTags) selected.Add("tags");
             if (ReplaceJavDbStudios) selected.Add("studios");
-            if (ReplaceJavDbActors) selected.Add("actors");
-            if (ReplaceJavDbDirectors) selected.Add("directors");
             if (ReplaceJavDbRating) selected.Add("rating");
-            if (ReplaceJavDbReleaseDate) selected.Add("releaseDate");
             return string.Join(',', selected);
         }
         set
@@ -523,10 +520,7 @@ public class PluginConfiguration : BasePluginConfiguration
             ReplaceJavDbGenres = selected.Contains("genres");
             ReplaceJavDbTags = selected.Contains("tags");
             ReplaceJavDbStudios = selected.Contains("studios");
-            ReplaceJavDbActors = selected.Contains("actors");
-            ReplaceJavDbDirectors = selected.Contains("directors");
             ReplaceJavDbRating = selected.Contains("rating");
-            ReplaceJavDbReleaseDate = selected.Contains("releaseDate");
         }
     }
 
@@ -537,10 +531,7 @@ public class PluginConfiguration : BasePluginConfiguration
         new EditorSelectOption { Name = "流派(标签)", Value = "genres", IsEnabled = true },
         new EditorSelectOption { Name = "标签(系列)", Value = "tags", IsEnabled = true },
         new EditorSelectOption { Name = "工作室(厂牌,发行商)", Value = "studios", IsEnabled = true },
-        new EditorSelectOption { Name = "演员名字", Value = "actors", IsEnabled = true },
-        new EditorSelectOption { Name = "导演信息", Value = "directors", IsEnabled = true },
-        new EditorSelectOption { Name = "评分", Value = "rating", IsEnabled = true },
-        new EditorSelectOption { Name = "发行时间", Value = "releaseDate", IsEnabled = true }
+        new EditorSelectOption { Name = "评分", Value = "rating", IsEnabled = true }
     };
 #endif
 

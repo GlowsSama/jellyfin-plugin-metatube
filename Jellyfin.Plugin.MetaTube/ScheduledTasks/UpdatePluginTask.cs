@@ -95,19 +95,53 @@ public class UpdatePluginTask : IScheduledTask
                 if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
                     throw new Exception("Invalid download url");
 
-                var zipStream = await _httpClient.Get(new HttpRequestOptions
+                var tempRoot = CreateUpdateTempRoot();
+                var packageDirectory = Path.Combine(tempRoot, "package");
+                var downloadPath = Path.Combine(tempRoot, "update.zip");
+                try
                 {
-                    Url = url,
-                    CancellationToken = cancellationToken,
-                    EnableDefaultUserAgent = true,
-                    Progress = progress
-                }).ConfigureAwait(false);
+                    using (var zipStream = await _httpClient.Get(new HttpRequestOptions
+                           {
+                               Url = url,
+                               CancellationToken = cancellationToken,
+                               EnableDefaultUserAgent = true,
+                               Progress = progress
+                           }).ConfigureAwait(false))
+                    {
+                        if (zipStream == null)
+                            throw new Exception("Plugin update download returned no data");
 
-                _zipClient.ExtractAllFromZip(zipStream, _applicationPaths.PluginsPath, true);
+                        using var zipFile = new FileStream(downloadPath, FileMode.CreateNew, FileAccess.Write,
+                            FileShare.None, 81920, FileOptions.Asynchronous);
+                        await zipStream.CopyToAsync(zipFile, 81920, cancellationToken).ConfigureAwait(false);
+                    }
 
-                _logger.Info("Plugin update complete");
+                    Directory.CreateDirectory(packageDirectory);
+                    using (var zipStream = File.OpenRead(downloadPath))
+                    {
+                        _zipClient.ExtractAllFromZip(zipStream, packageDirectory, true);
+                    }
 
-                _applicationHost.NotifyPendingRestart();
+                    var stagedAssemblyPath = Directory
+                        .GetFiles(packageDirectory, $"{Plugin.ProviderName}.dll", SearchOption.AllDirectories)
+                        .FirstOrDefault();
+                    if (string.IsNullOrWhiteSpace(stagedAssemblyPath))
+                        throw new Exception($"{Plugin.ProviderName}.dll was not found in the update package");
+
+                    var packageRoot = Path.GetDirectoryName(stagedAssemblyPath)
+                                      ?? throw new Exception("Unable to locate the staged plugin package root");
+                    var pluginDirectory = GetCurrentPluginDirectory();
+
+                    ReplacePluginDirectory(packageRoot, pluginDirectory);
+
+                    _logger.Info("Plugin update complete");
+
+                    _applicationHost.NotifyPendingRestart();
+                }
+                finally
+                {
+                    DeleteDirectoryIfExists(tempRoot);
+                }
             }
             else
             {
@@ -120,6 +154,132 @@ public class UpdatePluginTask : IScheduledTask
         }
 
         progress?.Report(100);
+    }
+
+    private string CreateUpdateTempRoot()
+    {
+        var tempPath = string.IsNullOrWhiteSpace(_applicationPaths.TempDirectory)
+            ? Path.GetTempPath()
+            : _applicationPaths.TempDirectory;
+        Directory.CreateDirectory(tempPath);
+
+        var tempRoot = Path.Combine(tempPath, $"MetaTubeUpdate-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        return tempRoot;
+    }
+
+    private string GetCurrentPluginDirectory()
+    {
+        var pluginsPath = Path.GetFullPath(_applicationPaths.PluginsPath);
+        var assemblyDirectory = Path.GetFullPath(
+            Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty);
+        if (IsUnderDirectory(assemblyDirectory, pluginsPath))
+            return assemblyDirectory;
+
+        var conventionalDirectory = Path.Combine(pluginsPath, Plugin.ProviderName);
+        if (Directory.Exists(conventionalDirectory))
+            return conventionalDirectory;
+
+        return Directory.EnumerateDirectories(pluginsPath)
+                   .Where(directory => string.Equals(Path.GetFileName(directory), Plugin.ProviderName,
+                       StringComparison.OrdinalIgnoreCase))
+                   .FirstOrDefault(directory =>
+                       File.Exists(Path.Combine(directory, $"{Plugin.ProviderName}.dll")))
+               ?? conventionalDirectory;
+    }
+
+    private void ReplacePluginDirectory(string packageRoot, string pluginDirectory)
+    {
+        var pluginParent = Path.GetDirectoryName(pluginDirectory)
+                           ?? throw new Exception("Unable to locate the plugin parent directory");
+        Directory.CreateDirectory(pluginParent);
+
+        var hadExistingPlugin = Directory.Exists(pluginDirectory);
+        var backupDirectory = Path.Combine(pluginParent,
+            $".{Path.GetFileName(pluginDirectory)}.backup-{Guid.NewGuid():N}");
+
+        try
+        {
+            if (hadExistingPlugin)
+                Directory.Move(pluginDirectory, backupDirectory);
+
+            Directory.CreateDirectory(pluginDirectory);
+            CopyDirectory(packageRoot, pluginDirectory);
+
+            if (!File.Exists(Path.Combine(pluginDirectory, $"{Plugin.ProviderName}.dll")))
+                throw new Exception("The installed plugin package is missing MetaTube.dll");
+        }
+        catch (Exception updateException)
+        {
+            try
+            {
+                DeleteDirectoryIfExists(pluginDirectory);
+                if (hadExistingPlugin && Directory.Exists(backupDirectory))
+                    Directory.Move(backupDirectory, pluginDirectory);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException("Plugin update failed and rollback also failed.",
+                    updateException, rollbackException);
+            }
+
+            throw;
+        }
+
+        if (Directory.Exists(backupDirectory))
+        {
+            try
+            {
+                Directory.Delete(backupDirectory, true);
+            }
+            catch (Exception cleanupException)
+            {
+                _logger.Warn("Unable to remove plugin backup directory {0}: {1}",
+                    backupDirectory, cleanupException.Message);
+            }
+        }
+    }
+
+    private static void CopyDirectory(string sourceDirectory, string targetDirectory)
+    {
+        foreach (var directory in Directory.EnumerateDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, directory);
+            Directory.CreateDirectory(Path.Combine(targetDirectory, relativePath));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, file);
+            var targetPath = Path.Combine(targetDirectory, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath) ?? targetDirectory);
+            File.Copy(file, targetPath, true);
+        }
+    }
+
+    private void DeleteDirectoryIfExists(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            return;
+
+        try
+        {
+            Directory.Delete(path, true);
+        }
+        catch (Exception exception)
+        {
+            _logger.Warn("Unable to remove temporary plugin update directory {0}: {1}",
+                path, exception.Message);
+        }
+    }
+
+    private static bool IsUnderDirectory(string path, string directory)
+    {
+        var relativePath = Path.GetRelativePath(directory, path);
+        return !Path.IsPathRooted(relativePath) &&
+               !string.Equals(relativePath, "..", StringComparison.Ordinal) &&
+               !relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+               !relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal);
     }
 
     private static Version ParseVersion(string v)
