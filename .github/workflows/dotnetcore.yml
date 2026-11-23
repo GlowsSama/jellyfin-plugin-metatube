@@ -1,6 +1,14 @@
 name: .NET
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Jellyfin.Plugin.MetaTube/**"
+      - "scripts/**"
+      - "jellyfin-plugin-metatube.sln"
+      - ".github/workflows/dotnetcore.yml"
   workflow_dispatch:
 
 permissions:
