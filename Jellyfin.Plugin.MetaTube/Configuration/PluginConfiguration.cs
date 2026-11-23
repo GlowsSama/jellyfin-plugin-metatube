@@ -66,7 +66,11 @@ public class PluginConfiguration : BasePluginConfiguration
     [Description("使用 JAVDB 的标签替换影片流派。")]
     [Browsable(false)]
 #endif
-    public bool ReplaceJavDbGenres { get; set; } = true;
+    public bool ReplaceJavDbGenres
+    {
+        get => true;
+        set { }
+    }
 
 #if __EMBY__
     [DisplayName("标签(系列)")]
@@ -497,7 +501,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("其它元数据")]
-    [Description("勾选需要从 JAVDB 补充的项目；勾选“流派”时，该字段为空才会处理，非空则跳过。")]
+    [Description("流派固定勾选且无法取消；其它项目可自由选择。流派为空时才会处理，非空则跳过。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif
@@ -517,7 +521,7 @@ public class PluginConfiguration : BasePluginConfiguration
             var selected = new HashSet<string>(
                 (value ?? string.Empty).Split(',').Select(item => item.Trim()).Where(item => item.Any()),
                 StringComparer.OrdinalIgnoreCase);
-            ReplaceJavDbGenres = selected.Contains("genres");
+            ReplaceJavDbGenres = true;
             ReplaceJavDbTags = selected.Contains("tags");
             ReplaceJavDbStudios = selected.Contains("studios");
             ReplaceJavDbRating = selected.Contains("rating");
@@ -528,7 +532,7 @@ public class PluginConfiguration : BasePluginConfiguration
     [Browsable(false)]
     public List<EditorSelectOption> JavDbReplacementOptions => new()
     {
-        new EditorSelectOption { Name = "流派(标签)", Value = "genres", IsEnabled = true },
+        new EditorSelectOption { Name = "流派(标签，固定)", Value = "genres", IsEnabled = false },
         new EditorSelectOption { Name = "标签(系列)", Value = "tags", IsEnabled = true },
         new EditorSelectOption { Name = "工作室(厂牌,发行商)", Value = "studios", IsEnabled = true },
         new EditorSelectOption { Name = "评分", Value = "rating", IsEnabled = true }

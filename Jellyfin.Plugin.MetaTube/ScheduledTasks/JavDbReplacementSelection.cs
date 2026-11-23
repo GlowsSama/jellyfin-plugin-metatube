@@ -28,7 +28,7 @@ internal sealed class JavDbReplacementSelection
     {
         return new JavDbReplacementSelection
         {
-            Genres = configuration?.ReplaceJavDbGenres ?? true,
+            Genres = true,
             Tags = configuration?.ReplaceJavDbTags ?? true,
             Studios = configuration?.ReplaceJavDbStudios ?? true,
             Rating = configuration?.ReplaceJavDbRating ?? false
