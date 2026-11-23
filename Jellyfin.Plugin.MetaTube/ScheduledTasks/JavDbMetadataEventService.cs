@@ -136,8 +136,9 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
 
         var state = await _processor.LoadStateForEventAsync(cancellationToken).ConfigureAwait(false);
         var isFailure = IsFailureRecord(state, item);
-        var isSuccess = IsSuccessRecord(state, item);
-        var needsMetadata = !JavDbMetadataSyncPlanner.IsMetadataComplete(item, selection);
+        var isManuallyCompleted = IsManualCompletionRecord(state, item);
+        var needsMetadata = !isManuallyCompleted &&
+                            !JavDbMetadataSyncPlanner.IsMetadataComplete(item, selection);
 
         await _queueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -150,8 +151,7 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
                 string.Equals(entry.ItemId, itemId, StringComparison.OrdinalIgnoreCase));
             var pathChanged = existing != null &&
                               !string.Equals(existing.Path, item.Path, StringComparison.OrdinalIgnoreCase);
-            var shouldQueue = force || existing != null || pathChanged || isFailure || !isSuccess ||
-                              needsMetadata;
+            var shouldQueue = force || existing != null || pathChanged || isFailure || needsMetadata;
             if (!shouldQueue)
                 return;
 
@@ -336,9 +336,9 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
 
         var state = await _processor.LoadStateForEventAsync(cancellationToken).ConfigureAwait(false);
         var isFailure = IsFailureRecord(state, item);
-        var isSuccess = IsSuccessRecord(state, item);
-        if (!queueItem.Force && isSuccess && !isFailure &&
-            JavDbMetadataSyncPlanner.IsMetadataComplete(item, selection))
+        var isManuallyCompleted = IsManualCompletionRecord(state, item);
+        if (!queueItem.Force && !isFailure &&
+            (isManuallyCompleted || JavDbMetadataSyncPlanner.IsMetadataComplete(item, selection)))
         {
             await MetadataOrganizer.OrganizeItemAsync(item, _libraryManager, _logger, cancellationToken)
                 .ConfigureAwait(false);
@@ -500,13 +500,15 @@ public sealed class JavDbMetadataEventService : IServerEntryPoint, IDisposable
             .Any(record => IsSameRemovedItem(record, itemId, keywords));
     }
 
-    private static bool IsSuccessRecord(JavDbMetadataState state, BaseItem item)
+    private static bool IsManualCompletionRecord(JavDbMetadataState state, BaseItem item)
     {
         var itemId = item.Id.ToString("N");
         var keywords = JavDbMetadataTaskBase.GetJavDbKeywords(item)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return (state?.Successes ?? Enumerable.Empty<JavDbMetadataRecord>())
-            .Any(record => IsSameRemovedItem(record, itemId, keywords));
+            .Any(record =>
+                string.Equals(record?.FailureKind, "manual_complete", StringComparison.OrdinalIgnoreCase) &&
+                IsSameRemovedItem(record, itemId, keywords));
     }
 
     private static bool IsSameRemovedItem(

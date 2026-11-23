@@ -56,9 +56,6 @@ internal static class JavDbMetadataSyncPlanner
             .Select(group => group.First())
             .ToList();
         var index = new StateIndex(state);
-        var mode = state.Successes.Count == 0
-            ? JavDbMetadataSyncMode.Full
-            : JavDbMetadataSyncMode.Incremental;
         var candidates = allItems
             .Select(item => new Candidate
             {
@@ -67,32 +64,67 @@ internal static class JavDbMetadataSyncPlanner
             })
             .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Keyword))
             .ToList();
-        var completedMetadataCandidates = mode == JavDbMetadataSyncMode.Full
-            ? new List<Candidate>()
-            : candidates
+
+        JavDbMetadataSyncMode mode;
+        string modeReason;
+        List<Candidate> completedMetadataCandidates;
+        List<Candidate> pendingCandidates;
+
+        if (selection.Genres)
+        {
+            completedMetadataCandidates = candidates
                 .Where(candidate =>
                     !index.IsManuallyCompleted(candidate.Item, candidate.Keyword) &&
-                    !index.IsFailed(candidate.Item, candidate.Keyword) &&
-                    index.IsSuccessful(candidate.Item, candidate.Keyword) &&
-                    IsMetadataComplete(candidate.Item, selection))
+                    HasValues(candidate.Item.Genres))
                 .ToList();
-        var completedMetadataIds = completedMetadataCandidates
-            .Select(candidate => candidate.Item.Id)
-            .ToHashSet();
-        var pendingCandidates = mode == JavDbMetadataSyncMode.Full
-            ? candidates
-            : candidates
+            var completedMetadataIds = completedMetadataCandidates
+                .Select(candidate => candidate.Item.Id)
+                .ToHashSet();
+            pendingCandidates = candidates
                 .Where(candidate =>
                     !completedMetadataIds.Contains(candidate.Item.Id) &&
                     !index.IsManuallyCompleted(candidate.Item, candidate.Keyword))
                 .ToList();
+            mode = completedMetadataCandidates.Count == 0 && pendingCandidates.Count > 0
+                ? JavDbMetadataSyncMode.Full
+                : JavDbMetadataSyncMode.Incremental;
+            modeReason = mode == JavDbMetadataSyncMode.Full
+                ? "范围内可识别影片的流派均为空，执行全量补全"
+                : "按流派字段查漏补缺，流派为空处理，流派非空跳过";
+        }
+        else
+        {
+            mode = state.Successes.Count == 0
+                ? JavDbMetadataSyncMode.Full
+                : JavDbMetadataSyncMode.Incremental;
+            completedMetadataCandidates = mode == JavDbMetadataSyncMode.Full
+                ? new List<Candidate>()
+                : candidates
+                    .Where(candidate =>
+                        !index.IsManuallyCompleted(candidate.Item, candidate.Keyword) &&
+                        !index.IsFailed(candidate.Item, candidate.Keyword) &&
+                        index.IsSuccessful(candidate.Item, candidate.Keyword) &&
+                        IsMetadataComplete(candidate.Item, selection))
+                    .ToList();
+            var completedMetadataIds = completedMetadataCandidates
+                .Select(candidate => candidate.Item.Id)
+                .ToHashSet();
+            pendingCandidates = mode == JavDbMetadataSyncMode.Full
+                ? candidates
+                : candidates
+                    .Where(candidate =>
+                        !completedMetadataIds.Contains(candidate.Item.Id) &&
+                        !index.IsManuallyCompleted(candidate.Item, candidate.Keyword))
+                    .ToList();
+            modeReason = mode == JavDbMetadataSyncMode.Full
+                ? "没有成功记录，执行全量替换"
+                : "存在成功记录，按所选元数据是否完整执行增量补全";
+        }
 
         return new JavDbMetadataSyncPlan
         {
             Mode = mode,
-            ModeReason = mode == JavDbMetadataSyncMode.Full
-                ? "没有成功记录，执行全量替换"
-                : "存在成功记录，按所选元数据是否完整执行增量补全",
+            ModeReason = modeReason,
             TotalItemCount = allItems.Count,
             PendingItems = pendingCandidates
                 .Select(candidate => candidate.Item)
@@ -115,8 +147,10 @@ internal static class JavDbMetadataSyncPlanner
         if (item == null || selection?.HasAny != true)
             return true;
 
-        return (!selection.Genres || HasValues(item.Genres)) &&
-               (!selection.Tags || HasValues(item.Tags)) &&
+        if (selection.Genres)
+            return HasValues(item.Genres);
+
+        return (!selection.Tags || HasValues(item.Tags)) &&
                (!selection.Studios || HasValues(item.Studios)) &&
                (!selection.Rating || item.CommunityRating.HasValue);
     }

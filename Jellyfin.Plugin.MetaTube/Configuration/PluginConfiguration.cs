@@ -497,7 +497,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
 #if __EMBY__
     [DisplayName("其它元数据")]
-    [Description("勾选需要从 JAVDB 补充的项目；计划任务“补充其他元数据”同时整理流派、角标和排序。")]
+    [Description("勾选需要从 JAVDB 补充的项目；勾选“流派”时，该字段为空才会处理，非空则跳过。")]
     [EditMultilSelect]
     [SelectItemsSource(nameof(JavDbReplacementOptions))]
 #endif

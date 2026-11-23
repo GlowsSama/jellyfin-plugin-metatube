@@ -150,7 +150,7 @@ public abstract class JavDbMetadataTaskBase : IScheduledTask
         if (!string.Equals(state.ReplacementFields, selection.Signature, StringComparison.Ordinal))
         {
             _logger.Info(
-                "JAVDB 替换项目发生变化 | 上次={0} | 当前={1} | 将清除成功记录并执行全量处理",
+                "JAVDB 替换项目发生变化 | 上次={0} | 当前={1} | 将清除成功记录并重新计算待处理范围",
                 state.ReplacementFields, selection.Signature);
             state.Successes.Clear();
             state.ReplacementFields = selection.Signature;
@@ -1095,7 +1095,7 @@ public sealed class JavDbMetadataCompleteTask : JavDbMetadataTaskBase
 
     public override string Description =>
 #if __EMBY__
-        "按插件设置从 JAVDB 补充其他元数据，并整理流派、角标和排序。无处理记录或设置变化时全量执行，否则增量执行；请求间隔至少 10 秒。";
+        "按插件设置从 JAVDB 补充其他元数据，并整理流派、角标和排序。勾选“流派”时以流派字段判断：流派为空视为待补，流派非空跳过；如需重新处理全部影片，请先运行“删除其它元数据”。请求间隔至少 10 秒。";
 #else
         "Manual maintenance task. The task replaces selected metadata from JAVDB, then organizes Chinese subtitle genres, cover badges, genre substitutions, deduplication and sorting. New items are normally processed by the event queue; missed or failed items can be processed by running this task. Valid library rules limit the task to those libraries; when no rules are configured, all libraries are processed. Items without a recognizable movie number are skipped without a JAVDB request. JAVDB requests are serialized with at least 10 seconds between requests; other providers are not affected.";
 #endif
