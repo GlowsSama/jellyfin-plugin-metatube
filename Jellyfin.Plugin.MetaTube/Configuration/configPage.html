@@ -207,14 +207,6 @@
                     </div>
                     -->
 
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
-                            <span>仅获取基础元数据 (建议关闭)</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启时仅获取番号、标题、演员和发行时间；关闭时同时获取来源站点的其它元数据。如需统一格式，可运行“补充其他元数据”。</div>
-                    </div>
-
                 </div>
 
                 <div class="verticalSection">
@@ -447,6 +439,14 @@
                 <div class="verticalSection">
                     <h2 class="sectionTitle">JAVDB</h2>
 
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="chkEnableBasicMetadataOnly" is="emby-checkbox" name="chkEnableBasicMetadataOnly" type="checkbox"/>
+                            <span>不获取其它元数据(建议关闭,建议关闭,建议关闭)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">开启时仅获取番号、标题、演员和发行时间；关闭时同时获取来源站点的其它元数据。如需统一格式，可运行“补充其他元数据”。</div>
+                    </div>
+
                     <details class="metaTubeMetadataDropdown" id="javDbReplacementFilter">
                         <summary>
                             <span class="metaTubeProviderFilterSummaryText">
@@ -463,7 +463,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="chkEnableJavDbMetadataEventQueue" is="emby-checkbox" name="chkEnableJavDbMetadataEventQueue" type="checkbox"/>
-                            <span>启用 JAVDB 新入库事件补全</span>
+                            <span>入库时从JAVDB补充其它元数据</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">新入库影片自动补充所选元数据；JAVDB 请求间隔至少 10 秒。</div>
                     </div>

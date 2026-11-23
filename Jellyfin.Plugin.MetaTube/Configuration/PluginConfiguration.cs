@@ -62,7 +62,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableTrailers { get; set; } = false;
 
 #if __EMBY__
-    [DisplayName("仅获取基础元数据 (建议关闭)")]
+    [DisplayName("不获取其它元数据(建议关闭,建议关闭,建议关闭)")]
     [Description("开启时仅获取番号、标题、演员和发行时间；关闭时同时获取来源站点的其它元数据。如需统一格式，可运行“补充其他元数据”。")]
 #endif
     public bool EnableBasicMetadataOnly { get; set; } = true;
@@ -545,7 +545,7 @@ public class PluginConfiguration : BasePluginConfiguration
 #endif
 
 #if __EMBY__
-    [DisplayName("启用 JAVDB 新入库事件补全")]
+    [DisplayName("入库时从JAVDB补充其它元数据")]
     [Description("新入库影片自动补充所选元数据；JAVDB 请求间隔至少 10 秒。")]
 #endif
     public bool EnableJavDbMetadataEventQueue { get; set; } = true;
